@@ -122,17 +122,75 @@ async function viewRun(runId) {
 
 // ── Export Run ─────────────────────────────────────────────────────────────
 
+let activeExportPopup = null;
+
 async function exportRun(runId, runName) {
+  // Close any existing popup
+  if (activeExportPopup) {
+    activeExportPopup.remove();
+    activeExportPopup = null;
+  }
+
+  try {
+    const hasDetailed = await tauriHasDetailedData(runId);
+
+    if (!hasDetailed) {
+      // No detailed data — export summary directly
+      await doExport(runId, runName, 'summary');
+      return;
+    }
+
+    // Show inline choice popup in the action cell
+    const exportBtns = document.querySelectorAll('.action-cell button');
+    let actionCell = null;
+    for (const btn of exportBtns) {
+      if (btn.textContent === 'Export' && btn.onclick && btn.onclick.toString().includes(runId)) {
+        actionCell = btn.parentElement;
+        break;
+      }
+    }
+    if (!actionCell) return;
+
+    const popup = document.createElement('div');
+    popup.className = 'export-popup';
+    const safeRunName = runName.replace(/'/g, "\\'");
+    popup.innerHTML = `
+      <button class="btn-small" onclick="doExport('${runId}', '${safeRunName}', 'summary'); closeExportPopup()">Export Summary</button>
+      <button class="btn-small" onclick="doExport('${runId}', '${safeRunName}', 'detailed'); closeExportPopup()">Export Detailed</button>
+      <button class="btn-small btn-danger-small" onclick="closeExportPopup()">Cancel</button>
+    `;
+
+    actionCell.appendChild(popup);
+    activeExportPopup = popup;
+  } catch (e) {
+    alert('Export failed: ' + e);
+  }
+}
+
+function closeExportPopup() {
+  if (activeExportPopup) {
+    activeExportPopup.remove();
+    activeExportPopup = null;
+  }
+}
+
+async function doExport(runId, runName, exportType) {
   try {
     const safeName = runName.replace(/[^a-zA-Z0-9]/g, '_');
+    const suffix = exportType === 'detailed' ? '_detailed' : '_summary';
     const filePath = await window.__TAURI__.dialog.save({
-      defaultPath: `${safeName}.csv`,
+      defaultPath: `${safeName}${suffix}.csv`,
       filters: [{ name: 'CSV Files', extensions: ['csv'] }],
     });
 
     if (!filePath) return; // User cancelled
 
-    await tauriExportRunToFile(runId, filePath);
+    if (exportType === 'detailed') {
+      await tauriExportRunDetailedToFile(runId, filePath);
+    } else {
+      await tauriExportRunToFile(runId, filePath);
+    }
+
     alert('Export saved successfully!');
   } catch (e) {
     alert('Export failed: ' + e);
