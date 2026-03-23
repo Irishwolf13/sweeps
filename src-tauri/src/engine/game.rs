@@ -1,5 +1,6 @@
 use rand::seq::SliceRandom;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use super::card::{build_deck, Card};
 use super::config::{GameConfig, ScoringMode, StartingOrder};
@@ -8,7 +9,7 @@ use super::strategy::{self, DrawSource, TurnAction};
 
 // ── Result types ──────────────────────────────────────────────────────────
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GameResult {
     pub player_scores: Vec<i32>,
     pub round_results: Vec<RoundResult>,
@@ -16,7 +17,7 @@ pub struct GameResult {
     pub total_turns: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoundResult {
     pub round_number: u8,
     pub turns: u32,
