@@ -195,6 +195,7 @@ function buildConfigFromUI() {
     allow_matching_elimination: document.getElementById('allow-matching').checked,
     allow_diagonal_elimination: document.getElementById('allow-diagonal').checked,
     scoring_mode: document.getElementById('scoring-mode').value,
+    starting_order: document.getElementById('starting-order').value,
     players: players,
     max_turns_per_round: 500,
   };
