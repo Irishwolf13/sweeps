@@ -20,10 +20,10 @@ async function startPlayGame() {
 
   // Human player gets perfect config (unused by engine, human makes own choices)
   config.players = [
-    { keep_threshold: 5, line_awareness: 1.0, opponent_awareness: 0.5 },
-    { ...aiConfig },
-    { ...aiConfig },
-    { ...aiConfig },
+    { keep_threshold: 5, line_awareness: 1.0, opponent_awareness: 0.5, flip_strategy: 'Random' },
+    { ...aiConfig, flip_strategy: 'Random' },
+    { ...aiConfig, flip_strategy: 'Random' },
+    { ...aiConfig, flip_strategy: 'Random' },
   ];
 
   try {
@@ -103,6 +103,7 @@ function canClickCell(r, c, cell) {
   if (!playState || playState.current_player !== 0) return false;
   const p = playState.pending.action_type;
 
+  if (p === 'choose_initial_flips') return cell.state === 'face_down';
   if (p === 'handle_normal_card') {
     if (selectionMode === 'replace') return cell.state !== 'empty';
     if (selectionMode === 'flip') return cell.state === 'face_down';
@@ -139,6 +140,12 @@ function renderPrompt() {
 
   selectionMode = null;
   buttons.innerHTML = '';
+
+  if (p.action_type === 'choose_initial_flips') {
+    const remaining = playState.pending.flips_remaining || 0;
+    prompt.innerHTML = `<p>Click ${remaining} card${remaining > 1 ? 's' : ''} to flip face-up</p>`;
+    return;
+  }
 
   if (p.action_type === 'game_over') {
     const winnerName = playState.player_names[playState.winner];
@@ -233,6 +240,17 @@ function setMode(mode) {
 
 async function handleCellClick(playerIdx, row, col) {
   if (!playState) return;
+
+  if (playState.pending.action_type === 'choose_initial_flips') {
+    try {
+      playState = await tauriPlayFlipInitial(row, col);
+      renderPlayState();
+    } catch (e) {
+      alert(e);
+    }
+    return;
+  }
+
   const p = playState.pending.action_type;
 
   // Normal card: replace or flip

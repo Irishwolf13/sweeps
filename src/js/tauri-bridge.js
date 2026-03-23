@@ -74,3 +74,7 @@ async function tauriPlayNextRound() {
 async function tauriPlayGetState() {
   return await invoke('play_get_state');
 }
+
+async function tauriPlayFlipInitial(row, col) {
+  return await invoke('play_flip_initial', { row, col });
+}

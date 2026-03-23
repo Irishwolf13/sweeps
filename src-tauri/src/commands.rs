@@ -210,3 +210,15 @@ pub fn play_get_state(
     let game = guard.as_ref().ok_or("No active game")?;
     Ok(game.get_state())
 }
+
+#[tauri::command]
+pub fn play_flip_initial(
+    row: usize,
+    col: usize,
+    state: State<'_, AppState>,
+) -> Result<PlayableGameState, String> {
+    let mut guard = state.interactive_game.lock().unwrap();
+    let game = guard.as_mut().ok_or("No active game")?;
+    game.human_flip_initial(row, col)?;
+    Ok(game.get_state())
+}

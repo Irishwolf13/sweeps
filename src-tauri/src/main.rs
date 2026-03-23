@@ -30,6 +30,7 @@ fn main() {
             commands::play_ai_turn,
             commands::play_next_round,
             commands::play_get_state,
+            commands::play_flip_initial,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
