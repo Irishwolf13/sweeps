@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::engine::game::GameResult;
 use crate::simulation::stats::SimulationSummary;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -14,7 +15,7 @@ pub struct RunMeta {
     pub player_count: u8,
 }
 
-fn runs_dir() -> Result<PathBuf, String> {
+pub fn runs_dir() -> Result<PathBuf, String> {
     let base = dirs::data_local_dir().ok_or("Could not find local data directory")?;
     let dir = base.join("number-sweep-sim").join("runs");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create runs directory: {}", e))?;
@@ -40,6 +41,11 @@ pub fn list_runs() -> Result<Vec<RunMeta>, String> {
         let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+
+        // Skip raw game data files
+        if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.ends_with("_raw.json")) {
             continue;
         }
 
@@ -80,12 +86,81 @@ pub fn get_run(run_id: &str) -> Result<SimulationSummary, String> {
 pub fn delete_run(run_id: &str) -> Result<bool, String> {
     let dir = runs_dir()?;
     let path = dir.join(format!("{}.json", run_id));
+    let raw_path = dir.join(format!("{}_raw.json", run_id));
+
+    // Delete raw data file if it exists
+    if raw_path.exists() {
+        fs::remove_file(&raw_path).map_err(|e| format!("Delete raw data error: {}", e))?;
+    }
+
     if path.exists() {
         fs::remove_file(&path).map_err(|e| format!("Delete error: {}", e))?;
         Ok(true)
     } else {
         Ok(false)
     }
+}
+
+pub fn has_detailed_data(run_id: &str) -> Result<bool, String> {
+    let dir = runs_dir()?;
+    let raw_path = dir.join(format!("{}_raw.json", run_id));
+    Ok(raw_path.exists())
+}
+
+pub fn export_run_detailed_csv(run_id: &str) -> Result<String, String> {
+    let dir = runs_dir()?;
+    let raw_path = dir.join(format!("{}_raw.json", run_id));
+    let data = fs::read_to_string(&raw_path).map_err(|e| format!("Read raw data error: {}", e))?;
+    let results: Vec<GameResult> =
+        serde_json::from_str(&data).map_err(|e| format!("Deserialize raw data error: {}", e))?;
+
+    if results.is_empty() {
+        return Ok(String::from("No game data\n"));
+    }
+
+    let player_count = results[0].player_scores.len();
+
+    // Build header
+    let mut header = String::from("Game,Round,Turns,Draw Pile Exhausted,Game Winner");
+    for p in 1..=player_count {
+        header += &format!(
+            ",P{} Round Score,P{} Eliminations,P{} Cards Remaining,P{} Went Out First,P{} Cleared All",
+            p, p, p, p, p
+        );
+    }
+    header += "\n";
+
+    let mut csv = header;
+
+    for (game_idx, result) in results.iter().enumerate() {
+        let game_num = game_idx + 1;
+        let winner = result.winner + 1; // 1-indexed
+
+        for round in &result.round_results {
+            let round_num = round.round_number + 1; // 1-indexed
+            csv += &format!(
+                "{},{},{},{},{}",
+                game_num,
+                round_num,
+                round.turns,
+                round.draw_pile_exhausted,
+                winner,
+            );
+
+            for p in 0..player_count {
+                let score = round.player_round_scores.get(p).copied().unwrap_or(0);
+                let elims = round.eliminations_per_player.get(p).copied().unwrap_or(0);
+                let remaining = round.cards_remaining_per_player.get(p).copied().unwrap_or(0);
+                let went_out = round.went_out_first == Some(p);
+                let cleared = round.cleared_all.contains(&p);
+                csv += &format!(",{},{},{},{},{}", score, elims, remaining, went_out, cleared);
+            }
+
+            csv += "\n";
+        }
+    }
+
+    Ok(csv)
 }
 
 pub fn export_run_csv(run_id: &str) -> Result<String, String> {
