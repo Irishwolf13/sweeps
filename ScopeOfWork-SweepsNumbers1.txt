@@ -1,0 +1,327 @@
+Project: Sweeps Game (Number Version) Simulator
+Date: March 19, 2026
+Barn Boy Games
+Dancing Goat Studios
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+Build a desktop application that simulates the Number Sweep card game at
+scale — running up to 1,000,000 four-round games per session. The simulator
+allows the team to adjust key game parameters ("levers"), run massive
+batches of simulated games, and analyze the results through detailed
+statistics.
+
+The primary goal is to answer critical game design questions:
+  - What cards should be in the deck, and how many of each?
+  - How does changing the number range affect game balance?
+  - Do diagonal eliminations make the game better or worse?
+  - What is the impact of different scoring modes?
+  - Is there a first-mover advantage, and how significant is it?
+  - How do special cards (Wild, Switch, Swap) affect gameplay?
+
+The app saves every simulation run so results can be revisited and
+compared side-by-side — making it easy to see exactly how a change
+to the deck or rules shifts the game's dynamics.
+
+================================================================================
+2. GAME RULES (NUMBER SWEEP)
+================================================================================
+
+2.1 Setup
+  - 2-4 players (configurable)
+  - Each player gets 16 cards dealt face-down in a 4x4 grid
+  - Each player flips 2 cards face-up to start
+  - Remaining cards form the Draw Pile
+  - Top card of Draw Pile flipped to start the Discard Pile
+
+2.2 Turn Structure
+  - Player draws one card from either Draw Pile or Discard Pile
+  - Player then either:
+    (a) Replaces any card in their grid (face-up or face-down) with the
+        drawn card; replaced card goes to Discard Pile
+    (b) Discards the drawn card and flips one face-down card in their grid
+
+2.3 Elimination Rules
+  Cards are eliminated (removed from grid) when:
+  - A ROW sums to exactly 0
+  - A COLUMN sums to exactly 0
+  - [Togglable] An entire ROW contains all identical cards
+  - [Togglable] An entire COLUMN contains all identical cards
+  - [Togglable] A DIAGONAL sums to 0 or contains all identical cards,
+    but only when the grid is a perfect square (4x4, 3x3, 2x2)
+
+  When cards are eliminated:
+  - Eliminated cards are removed from the grid
+  - Player chooses which eliminated card goes on top of Discard Pile
+  - For diagonal elimination, remaining cards shift to maintain grid shape
+
+2.4 Round End
+  - Triggered when any player is down to 4 cards with all face-up
+  - All other players get one final turn
+  - First player to "go out" receives -5 point bonus
+  - If any player eliminates ALL cards: -5 point bonus
+
+2.5 Scoring Modes (Togglable)
+  - BASIC: Each remaining card = 1 point. Lowest score wins.
+  - EXPERT: Sum of the ABSOLUTE VALUES of remaining cards = score.
+    (e.g., -3 is worth 3 points, same as 3). Lowest wins.
+  - In both modes: +1 point per Switch/Swap card used during the round
+  - Play 4 rounds. Cumulative lowest score wins.
+
+2.6 Special Cards
+  - WILD CARD: Can represent any number card in the deck
+  - SWITCH CARD: Swap positions of two cards within your own grid.
+    Use immediately or discard. If used, stays in hand (+1 point).
+    If flipped from face-down position, must play or discard; replaced
+    by top card from Draw Pile.
+  - SWAP CARD: Swap one of your grid cards with a card from another
+    player's grid. Same use/scoring rules as Switch Card.
+
+================================================================================
+3. CONFIGURABLE LEVERS
+================================================================================
+
+These are the controls the team can adjust between simulation runs to
+test different game configurations. This is the core value of the tool.
+
+3.1 Deck Composition (Primary Testing Area)
+
+  Number Card Range
+    - Set the lowest negative card (e.g., -5, -3, -2)
+    - Set the highest positive card (e.g., 10, 7, 5)
+    - The simulator builds the deck based on this range
+
+  Per-Card Quantity
+    - For every number in the range, set exactly how many copies are in
+      the deck (e.g., twenty 0's, fifteen 1's, two -5's)
+    - Displayed as an editable table — one row per card value
+    - Total card count auto-calculated
+
+  Special Card Counts
+    - Wild Cards: adjustable (0-30, default 15)
+    - Switch Cards: adjustable (0-30, default 15)
+    - Swap Cards: adjustable (0-30, default 15)
+
+  Deck Presets
+    - "Default (250 cards)" — matches the primary deck in the rules
+    - "Alternative (200 cards)" — matches the alternate deck in the rules
+    - "Custom" — fully manual configuration
+
+3.2 Game Rule Toggles
+
+  - Matching Elimination: ON/OFF — whether rows/columns with all
+    identical cards can be eliminated (when OFF, only sum-to-zero works)
+  - Diagonal Elimination: ON/OFF — whether diagonals can be eliminated
+    (only applies when the grid is a perfect square)
+  - Scoring Mode: Basic (count cards) or Expert (absolute value sum)
+  - Player Count: 2, 3, or 4 players
+
+3.3 AI Player Intelligence (Per-Player)
+
+  Each simulated player has tunable "skill" settings that control how
+  smart they play. This lets the team test scenarios like "what if all
+  players are beginners?" vs. "what if one expert plays against three
+  novices?"
+
+  Grid Awareness (0-100%)
+    How well the player spots elimination opportunities. A high-awareness
+    player efficiently works toward completing rows and columns. A
+    low-awareness player makes suboptimal placements.
+
+  Draw Strategy
+    How the player chooses between the Draw Pile and Discard Pile:
+    - Opportunistic: takes the discard when it clearly helps
+    - Always Draw: always draws blind
+    - Always Discard: always takes the visible card
+    - Smart: carefully evaluates based on grid needs
+
+  Flip vs. Replace Tendency (0-100%)
+    When the drawn card doesn't obviously help:
+    - High = conservative (flips a face-down card to gather information)
+    - Low = aggressive (replaces a known card speculatively)
+
+  Special Card Intelligence (0-100%)
+    How effectively the player uses Wild, Switch, and Swap cards.
+    A skilled player uses Switch to complete an elimination. An unskilled
+    player uses special cards randomly.
+
+  Aggression (0-100%)
+    How aggressively the player uses Swap cards against opponents.
+    High = actively disrupts other players' grids. Low = focuses on
+    own grid.
+
+  Player Presets
+    Quick-set a player to "Beginner", "Intermediate", "Advanced", or
+    "Expert" skill levels, or fine-tune each slider individually.
+
+================================================================================
+4. SIMULATION & STATISTICS
+================================================================================
+
+4.1 Simulation Scale
+  - Run 1,000 to 1,000,000 four-round games per session
+  - Games run in parallel for speed
+  - Real-time progress bar during simulation
+
+4.2 Statistics Collected
+
+  Game-Level Results
+    - Average / median / min / max total score per player across 4 rounds
+    - Win rate per player position (is there a first-mover advantage?)
+    - Average number of turns per round
+    - How often a player eliminates all cards (perfect round)
+
+  Elimination Breakdown
+    - How often each type fires: row vs. column vs. diagonal
+    - Sum-to-zero eliminations vs. all-matching eliminations
+    - Average eliminations per round per player
+    - How often diagonal elimination occurs (when enabled)
+    - How often matching elimination occurs (when enabled)
+
+  Card & Deck Insights
+    - How often the Draw Pile runs out
+    - Average cards remaining per player at round end
+    - Wild / Switch / Swap usage rates
+    - Most common card values left at end of rounds
+
+  Scoring Analysis
+    - Score distribution across all simulated games
+    - Average score per round
+    - How often the -5 bonus is awarded (going out first / full clear)
+
+  Deck Health (How Many Cards Do We Need?)
+    One of the key questions this tool answers is: "What is the right
+    total number of cards for a well-shuffled, balanced deck?" The
+    simulator tracks five metrics to help determine this:
+
+    - Draw Pile Exhaustion Rate — How often does the Draw Pile run out
+      before the round ends? If this happens frequently, the deck is
+      too small for the player count.
+
+    - Card Diversity Index — How varied are the card values players see
+      in consecutive draws? If players keep drawing the same values,
+      the deck is too concentrated in certain cards.
+
+    - Effective Deck Usage — What percentage of the total deck actually
+      gets touched during a 4-round game? If only 60% of cards are
+      ever drawn, the deck may be larger than it needs to be.
+
+    - Shuffle Quality (Clump Detection) — How often do players draw the
+      same value back-to-back or in clusters? A well-sized deck with
+      good quantities should produce varied, unpredictable draws.
+
+    - Round Completion Rate — How often do rounds end naturally (someone
+      goes out) vs. stalling because no useful cards are left to draw?
+
+    By running simulations with different total deck sizes and comparing
+    these metrics, the team can find the sweet spot where the Draw Pile
+    rarely runs out, draws feel varied and unpredictable, most of the
+    deck gets used (no waste), and rounds complete naturally.
+
+================================================================================
+5. SAVING & COMPARING RUNS
+================================================================================
+
+Every simulation run is automatically saved with its full configuration
+and results. This enables the team's core workflow:
+
+  1. Run a simulation with the current deck/rules
+  2. Change a lever (e.g., reduce Wild Cards from 15 to 5)
+  3. Run another simulation
+  4. Compare the two runs side-by-side to see exactly what changed
+
+Features:
+  - Run History: browse all past simulations by name, date, and settings
+  - View: re-open any past run's full results
+  - Compare: select any two runs and see every metric side-by-side with
+    the difference (absolute and percentage) highlighted
+  - Export: download any run's data as a CSV file for external analysis
+  - Delete: clean up old or irrelevant runs
+
+================================================================================
+6. USER INTERFACE
+================================================================================
+
+Desktop application with a clean, dark-themed interface organized into
+three main views:
+
+  Configure
+    All levers in one place. Deck composition table at the top, game
+    rule toggles in the middle, player strategy panels at the bottom.
+    "Run Simulation" button with progress bar.
+
+  Results
+    Summary cards showing key metrics at a glance (game length, win
+    rates, eliminations, scoring). Detailed per-player breakdown below.
+
+  History
+    List of all saved runs. Select one to view, select two to compare.
+    Export and delete options.
+
+================================================================================
+7. DEVELOPMENT PHASES
+================================================================================
+
+Phase 1: Foundation
+  - Application setup and project structure
+  - Card and deck data structures
+  - Grid logic with elimination detection
+  - Basic game loop with random play
+
+Phase 2: AI & Strategy
+  - AI decision-making framework with configurable intelligence
+  - Draw, placement, and flip logic
+  - Special card usage (Wild, Switch, Swap)
+  - Elimination planning intelligence
+
+Phase 3: Simulation Engine
+  - Parallel game runner (up to 1,000,000 games)
+  - Full statistics collection and aggregation
+  - Real-time progress tracking
+
+Phase 4: User Interface — Configuration
+  - Deck composition controls (range sliders, quantity table)
+  - Game rule toggles
+  - Per-player strategy panels with presets
+  - Input validation
+
+Phase 5: User Interface — Results & History
+  - Results display with summary and detailed views
+  - Run history management
+  - Side-by-side comparison
+  - CSV export
+
+Phase 6: Polish & Testing
+  - Edge case handling
+  - Performance optimization at scale
+  - Final UI refinements
+
+================================================================================
+8. DESIGN NOTES
+================================================================================
+
+  Hidden Information
+    Face-down cards are unknown to all players, including the AI. The
+    AI must make decisions with incomplete information, just like a
+    real player. The "Grid Awareness" skill affects how well the AI
+    handles this uncertainty.
+
+  Wild Card Evaluation
+    When checking if a row or column can be eliminated, the simulator
+    evaluates all possible values a Wild Card could represent. Since
+    rows/columns have at most 4 cards, this is fast even at scale.
+
+  Grid Shrinking
+    After diagonal elimination, the grid compacts to the next smaller
+    perfect square (4x4 to 3x3, 3x3 to 2x2). The AI decides which
+    direction to shift remaining cards.
+
+  Deck Validation
+    The app warns if the deck doesn't have enough cards for the selected
+    number of players (each player needs 16 cards, plus a Draw Pile).
+
+================================================================================
+END OF SCOPE
+================================================================================

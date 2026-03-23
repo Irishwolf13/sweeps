@@ -1,0 +1,534 @@
+================================================================================
+                    SWEEPS: NUMBER SWEEP SIMULATOR
+                         SCOPE OF WORK
+================================================================================
+
+Project: Number Sweep Game Simulator
+Date: 2026-03-19
+Tech Stack: Tauri 2.x (Rust backend + HTML/JS/CSS frontend)
+Reference: ../height (Height Fight Simulator)
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+Build a desktop simulation application for the "Number Sweep" card game that
+allows the user to configure game parameters ("levers"), run thousands of
+simulated games in parallel, and analyze statistical results. The app will
+support saving simulation runs and comparing them side-by-side to help
+determine optimal deck compositions and game balance.
+
+The primary goal is to answer the question: "What cards should be in the deck,
+and how many of each?" by running simulations with different configurations
+and comparing outcomes.
+
+Architecture mirrors the Height Fight Simulator:
+  - Rust backend: game engine, simulation runner, statistics, persistence
+  - HTML/JS/CSS frontend: configuration panel, results display, history
+  - Tauri IPC bridge connecting the two
+
+================================================================================
+2. GAME RULES (NUMBER SWEEP)
+================================================================================
+
+2.1 Setup
+  - 2-4 players (configurable)
+  - Each player gets 16 cards dealt face-down in a 4x4 grid
+  - Each player flips 2 cards face-up to start
+  - Remaining cards form the Draw Pile
+  - Top card of Draw Pile flipped to start the Discard Pile
+
+2.2 Turn Structure
+  - Player draws one card from either Draw Pile or Discard Pile
+  - Player then either:
+    (a) Replaces any card in their grid (face-up or face-down) with the
+        drawn card; replaced card goes to Discard Pile
+    (b) Discards the drawn card and flips one face-down card in their grid
+
+2.3 Elimination Rules
+  Cards are eliminated (removed from grid) when:
+  - A ROW sums to exactly 0
+  - A COLUMN sums to exactly 0
+  - [MATCHING LEVER] An entire ROW contains all identical cards
+  - [MATCHING LEVER] An entire COLUMN contains all identical cards
+  - [DIAGONAL LEVER] A DIAGONAL sums to 0 or contains all identical cards,
+    but only when the grid is a perfect square (4x4, 3x3, 2x2)
+
+  When cards are eliminated:
+  - Eliminated cards are removed from the grid
+  - Player chooses which eliminated card goes on top of Discard Pile
+  - For diagonal elimination, remaining cards shift to maintain grid shape
+
+2.4 Round End
+  - Triggered when any player is down to 4 cards with all face-up
+  - All other players get one final turn
+  - First player to "go out" receives -5 point bonus
+  - If any player eliminates ALL cards: -5 point bonus
+
+2.5 Scoring Modes (Configurable Lever)
+  - BASIC: Each remaining card = 1 point. Lowest score wins.
+  - EXPERT: Sum of the ABSOLUTE VALUES of remaining cards = score.
+    (e.g., -3 is worth 3 points, same as 3). Lowest wins.
+  - In both modes: +1 point per Switch/Swap card used during the round
+  - Play 4 rounds. Cumulative lowest score wins.
+
+2.6 Special Cards
+  - WILD CARD: Can represent any number card in the deck
+  - SWITCH CARD: Swap positions of two cards within your own grid.
+    Use immediately or discard. If used, stays in hand (+1 point).
+    If flipped from face-down position, must play or discard; replaced
+    by top card from Draw Pile.
+  - SWAP CARD: Swap one of your grid cards with a card from another
+    player's grid. Same use/scoring rules as Switch Card.
+
+================================================================================
+3. CONFIGURABLE LEVERS (SIMULATION PARAMETERS)
+================================================================================
+
+3.1 Deck Composition Levers
+  These are the PRIMARY levers for game balance testing.
+
+  3.1.1 Number Card Range
+    - Configurable negative range minimum (default: -5)
+    - Configurable positive range maximum (default: 10)
+    - Example: user could set range to -3 through 7
+
+  3.1.2 Number Card Quantities
+    - Per-value quantity control: for each number in the range, set how
+      many copies exist in the deck
+    - UI: table/grid showing each card value and an editable quantity
+    - Default quantities from rules doc:
+        -5: x2, -4: x4, -3: x6, -2: x8, -1: x15,
+        0: x20,
+        1-10: x15 each
+
+  3.1.3 Wild Card Count
+    - Adjustable number of Wild Cards in the deck (default: 15)
+    - Range: 0-30
+
+  3.1.4 Switch Card Count
+    - Adjustable number of Switch Cards in the deck (default: 15)
+    - Range: 0-30
+
+  3.1.5 Swap Card Count
+    - Adjustable number of Swap Cards in the deck (default: 15)
+    - Range: 0-30
+
+3.2 Game Rule Levers
+
+  3.2.1 Matching Elimination Toggle
+    - ON/OFF: Whether rows/columns with all identical cards can be
+      eliminated
+    - When OFF, only sum-to-zero elimination is available
+
+  3.2.2 Diagonal Elimination Toggle
+    - ON/OFF: Whether players can eliminate on diagonals
+    - When ON, diagonals only work when grid is a perfect square
+
+  3.2.3 Scoring Mode
+    - BASIC: Count of remaining cards
+    - EXPERT: Sum of the ABSOLUTE VALUES of remaining cards
+      (e.g., a -3 card is worth 3 points, same as a 3 card)
+
+  3.2.4 Player Count
+    - 2, 3, or 4 players
+
+3.3 AI Player Strategy Levers (Per-Player Configurable)
+
+  3.3.1 Grid Awareness (0.0 - 1.0)
+    How well the AI evaluates its grid state and spots elimination
+    opportunities. High value = accurately identifies which rows/columns
+    are close to elimination and prioritizes completing them.
+    Low value = makes suboptimal placement decisions.
+
+  3.3.2 Draw Strategy
+    How the AI chooses between Draw Pile and Discard Pile:
+    - OPPORTUNISTIC: Takes discard if it helps an elimination, otherwise
+      draws blind
+    - ALWAYS_DRAW: Always draws from Draw Pile (random)
+    - ALWAYS_DISCARD: Always takes from Discard Pile (if helpful)
+    - SMART: Evaluates discard value against grid needs with skill-based
+      accuracy
+
+  3.3.3 Flip vs Replace Tendency (0.0 - 1.0)
+    When drawing a card that doesn't obviously help, how often does the AI
+    choose to flip a face-down card (information gathering) vs. replacing
+    a known card (speculative play)?
+    High value = prefers flipping unknowns (conservative)
+    Low value = prefers replacing cards (aggressive)
+
+  3.3.4 Special Card Usage Intelligence (0.0 - 1.0)
+    How effectively the AI uses Switch, Swap, and Wild cards:
+    High value = uses Switch to complete eliminations, Swap to disrupt
+    opponents or steal needed cards, Wild to fill exact gaps
+    Low value = uses special cards randomly or suboptimally
+
+  3.3.5 Aggression (0.0 - 1.0)
+    How aggressively the AI plays Swap cards against opponents:
+    High value = actively targets opponents' good setups
+    Low value = focuses on own grid, rarely swaps with opponents
+
+================================================================================
+4. SIMULATION ENGINE (RUST BACKEND)
+================================================================================
+
+4.1 Module: engine/
+  Core game logic, isolated from simulation orchestration.
+
+  4.1.1 card.rs - Card Definitions
+    - Card enum: Number(i32), Wild, Switch, Swap
+    - Deck builder: generates deck from configurable composition
+    - Deck validation (minimum cards needed for player count)
+
+  4.1.2 grid.rs - Player Grid
+    - 4x4 grid structure with face-up/face-down state per cell
+    - Grid operations: place card, flip card, remove row/column/diagonal
+    - Elimination detection: check all rows, columns, and (if enabled)
+      diagonals for sum-to-zero or all-matching
+    - Grid compaction after diagonal elimination (shift to maintain
+      perfect square)
+    - Track grid dimensions as it shrinks (4x4 -> 3x3 -> 2x2 -> etc.)
+
+  4.1.3 game.rs - Game Loop
+    - Full game state: players, grids, draw pile, discard pile, round
+    - Turn execution: draw -> decide -> place/flip -> check eliminations
+    - Round end detection (player at 4 cards, all face-up)
+    - Final turn for remaining players
+    - Scoring calculation (both modes)
+    - 4-round game management with cumulative scoring
+    - Safety valve: max turns per round to prevent infinite loops
+
+  4.1.4 strategy.rs - AI Decision Making
+    - Perception model: AI "sees" its grid with accuracy based on
+      Grid Awareness skill
+    - Draw decision: evaluate Discard Pile top card vs. blind draw
+    - Placement decision: where to put a drawn card (or flip instead)
+    - Elimination planning: identify which rows/columns are closest
+      to elimination
+    - Special card logic: when and how to use Wild/Switch/Swap
+    - Opponent awareness for Swap targeting
+
+  4.1.5 config.rs - Configuration Structures
+    - DeckConfig: card range, quantities, special card counts
+    - GameConfig: diagonal toggle, scoring mode, player count
+    - PlayerConfig: all AI strategy parameters
+    - SimulationConfig: number of games, run name
+
+4.2 Module: simulation/
+  Orchestration and statistics.
+
+  4.2.1 runner.rs - Parallel Simulation Runner
+    - Uses rayon for parallel game execution
+    - Atomic progress counter for UI updates
+    - Configurable game count (1,000 - 1,000,000)
+    - Independent RNG seeds per game
+
+  4.2.2 stats.rs - Statistics Aggregation
+    Collected metrics (per simulation run):
+
+    Game-Level Stats:
+    - Average/median/stddev/min/max total score per player across 4 rounds
+    - Win rate per player position (1st, 2nd, 3rd, 4th)
+    - First-mover advantage analysis
+    - Average number of turns per round
+    - Average rounds where someone eliminates all cards
+
+    Elimination Stats:
+    - Frequency of each elimination type (row vs column vs diagonal)
+    - Frequency of sum-to-zero vs all-matching eliminations
+    - Average eliminations per round per player
+    - How often diagonal elimination occurs (when enabled)
+    - How often matching elimination occurs (when enabled)
+
+    Card Stats:
+    - Draw pile exhaustion rate (how often it runs out)
+    - Average cards remaining per player at round end
+    - Wild/Switch/Swap usage rates
+    - Most common card values remaining at end of round
+
+    Scoring Stats:
+    - Score distribution (histogram data)
+    - Average score per round
+    - Frequency of -5 bonus (going out first / eliminating all)
+    - Score difference between Basic and Expert modes (if relevant)
+
+    Deck Health Stats:
+    - Draw Pile Exhaustion Rate: how often the Draw Pile runs out before
+      the round ends naturally. High exhaustion = deck too small.
+    - Card Diversity Index: how varied are the card values a player sees
+      in consecutive draws. Low diversity = deck too concentrated in
+      certain values.
+    - Effective Deck Usage: what percentage of the total deck actually
+      gets drawn/touched during a 4-round game. If a large portion of
+      the deck is never seen, it may be unnecessarily large.
+    - Shuffle Quality Proxy (Clump Detection): average gap between
+      drawing the same card value twice. Measures how "clumpy" draws
+      feel. A well-sized deck with good quantities produces varied draws.
+    - Round Completion Rate: how often rounds end naturally (a player
+      goes out) vs. stalling because useful cards are unavailable.
+
+    These metrics together help answer: "How many total cards do we need
+    for a well-shuffled, well-balanced deck?" by identifying the sweet
+    spot where the Draw Pile rarely exhausts, draws feel varied, most
+    of the deck gets used, and rounds complete naturally.
+
+4.3 Module: history/
+  Persistence and comparison.
+
+  4.3.1 store.rs - JSON Persistence
+    - Save runs to %LOCALAPPDATA%/sweeps-number-sim/runs/
+    - UUID-based filenames
+    - Full config + results stored per run
+
+  4.3.2 compare.rs - Run Comparison
+    - Select two saved runs
+    - Compute deltas and percentage changes across all metrics
+    - Highlight significant differences
+
+================================================================================
+5. FRONTEND (HTML/JS/CSS)
+================================================================================
+
+5.1 Overall Design
+  - Dark theme matching Height Fight Simulator
+  - Three-tab layout: Configure | Results | History
+  - Responsive within desktop window
+
+5.2 Configure Tab
+
+  5.2.1 Deck Composition Section
+    - Number range sliders (negative min, positive max)
+    - Dynamic card quantity table: one row per card value in range,
+      with +/- buttons or number inputs for quantity
+    - Special card quantity inputs (Wild, Switch, Swap)
+    - Total card count display (auto-calculated)
+    - Deck presets dropdown: "Default (250 cards)", "Alternative (200
+      cards)", "Custom"
+    - Validation warnings (e.g., not enough cards for player count)
+
+  5.2.2 Game Rules Section
+    - Player count selector (2/3/4)
+    - Diagonal elimination toggle (ON/OFF)
+    - Scoring mode selector (Basic/Expert)
+
+  5.2.3 Player Strategy Section
+    - Dynamically generated per player (based on player count)
+    - Each player panel contains:
+      * Grid Awareness slider (0.0 - 1.0)
+      * Draw Strategy dropdown
+      * Flip vs Replace slider (0.0 - 1.0)
+      * Special Card Intelligence slider (0.0 - 1.0)
+      * Aggression slider (0.0 - 1.0)
+    - Player presets: "Beginner", "Intermediate", "Advanced", "Expert"
+    - "Apply to All" button to copy one player's config to all others
+
+  5.2.4 Simulation Controls
+    - Run name input
+    - Number of games input (1,000 - 1,000,000)
+    - Run Simulation button
+    - Progress bar with game count
+
+5.3 Results Tab
+
+  5.3.1 Summary Cards (top row)
+    - Game Length: avg/median/stddev turns per round
+    - Win Rates: per-player win percentages + first-mover advantage
+    - Eliminations: avg per round, breakdown by type
+    - Scoring: avg score distribution
+
+  5.3.2 Per-Player Breakdown
+    - Table with one column per player
+    - Rows: avg score, win rate, avg eliminations, avg cards remaining,
+      special card usage, etc.
+
+  5.3.3 Detailed Stats
+    - Elimination type breakdown (pie/bar chart data as text)
+    - Card value frequency at end of rounds
+    - Score distribution
+
+5.4 History Tab
+  - Table of saved runs (name, date, game count, player count)
+  - View: re-display any saved run's results
+  - Compare: select 2 runs, view metric differences with deltas
+  - Export: save run as CSV
+  - Delete: remove saved runs
+
+================================================================================
+6. TAURI IPC COMMANDS
+================================================================================
+
+Commands exposed from Rust to JavaScript:
+
+  run_simulation(config) -> SimulationResult
+    Run N games with given configuration, return aggregated stats.
+
+  get_progress() -> u32
+    Poll current simulation progress (game count completed).
+
+  save_run(result) -> String
+    Persist a simulation run, return UUID.
+
+  list_runs() -> Vec<RunSummary>
+    List all saved runs with metadata.
+
+  load_run(id) -> SimulationResult
+    Load a specific saved run's full results.
+
+  compare_runs(id_a, id_b) -> ComparisonResult
+    Compare two saved runs, return deltas.
+
+  delete_run(id) -> bool
+    Delete a saved run.
+
+  export_run_csv(id) -> String
+    Export a run as CSV string.
+
+  validate_deck(config) -> ValidationResult
+    Check if deck composition is valid for the player count.
+
+================================================================================
+7. FILE STRUCTURE
+================================================================================
+
+sweeps/
+├── src/                              # Frontend
+│   ├── index.html                    # Main UI (3 tabs)
+│   ├── js/
+│   │   ├── app.js                    # Main app controller
+│   │   ├── config-panel.js           # Configuration UI + deck builder
+│   │   ├── results-panel.js          # Results display
+│   │   ├── history-panel.js          # History & comparison
+│   │   └── tauri-bridge.js           # Tauri IPC bridge
+│   └── styles/
+│       └── main.css                  # Dark theme styling
+├── src-tauri/                        # Backend (Rust)
+│   ├── src/
+│   │   ├── main.rs                   # Tauri app entry point
+│   │   ├── commands.rs               # IPC command handlers
+│   │   ├── engine/
+│   │   │   ├── mod.rs
+│   │   │   ├── card.rs               # Card types, deck builder
+│   │   │   ├── grid.rs               # 4x4 grid logic, eliminations
+│   │   │   ├── config.rs             # Configuration structs
+│   │   │   ├── game.rs               # Game loop, rounds, scoring
+│   │   │   └── strategy.rs           # AI decision making
+│   │   ├── simulation/
+│   │   │   ├── mod.rs
+│   │   │   ├── runner.rs             # Parallel simulation runner
+│   │   │   └── stats.rs              # Statistics aggregation
+│   │   └── history/
+│   │       ├── mod.rs
+│   │       ├── store.rs              # JSON persistence
+│   │       └── compare.rs            # Run comparison
+│   ├── Cargo.toml                    # Rust dependencies
+│   ├── tauri.conf.json               # Tauri configuration
+│   └── build.rs
+├── scope_of_work.txt                 # This document
+└── Grid Game Card Game RULES.docx    # Original game rules
+
+================================================================================
+8. DEVELOPMENT PHASES
+================================================================================
+
+Phase 1: Foundation
+  - Project scaffolding (Tauri 2.x, Cargo, frontend structure)
+  - Card and deck data structures
+  - Grid data structure with elimination detection
+  - Basic game loop (no AI, random decisions)
+
+Phase 2: AI & Strategy
+  - AI strategy framework with configurable parameters
+  - Draw decision logic
+  - Placement/flip decision logic
+  - Special card usage logic (Wild, Switch, Swap)
+  - Elimination planning intelligence
+
+Phase 3: Simulation Engine
+  - Parallel runner with rayon
+  - Statistics aggregation (all metrics from section 4.2.2)
+  - Progress tracking
+
+Phase 4: Frontend - Configuration
+  - Deck composition UI (range sliders, quantity table)
+  - Game rules controls
+  - Per-player strategy panels
+  - Deck validation
+  - Presets
+
+Phase 5: Frontend - Results & History
+  - Results display (summary cards, per-player breakdown)
+  - History list, view, compare, export, delete
+  - Comparison table with deltas
+
+Phase 6: Polish & Testing
+  - Edge case handling (draw pile exhaustion, grid compaction)
+  - Performance tuning for 100k game simulations
+  - UI refinements
+  - Validation and error handling
+
+================================================================================
+9. BUDGET & COST
+================================================================================
+
+Total project cost shall not exceed $2,500.
+
+If at any point during development the work is taking longer than expected,
+a check-in will occur at the $1,500 mark. At this check-in, both parties
+will review:
+  - Progress completed to date
+  - Remaining work and estimated effort
+  - Whether to continue as-is, adjust scope, or re-prioritize
+
+No additional work beyond $2,500 will be performed without explicit
+written approval from the founders.
+
+================================================================================
+10. KEY TECHNICAL CONSIDERATIONS (DEVELOPMENT REFERENCE)
+================================================================================
+
+9.1 Grid Compaction
+  When diagonal elimination removes cards, the grid must shrink to the
+  next perfect square (4x4 -> 3x3 -> 2x2). Remaining cards shift to
+  fill the grid. The player chooses direction (up/down or left/right).
+  AI needs a strategy for choosing shift direction.
+
+9.2 Hidden Information
+  Face-down cards are unknown to all players (and to the AI). The AI
+  must make decisions with incomplete information. Grid Awareness skill
+  affects how well the AI tracks/remembers cards it has seen.
+
+9.3 Deck Validation
+  The deck must have enough cards to:
+  - Deal 16 cards per player (64 cards for 4 players)
+  - Have a reasonable Draw Pile remaining
+  - Minimum suggested: player_count * 16 + 20
+
+9.4 Wild Card Resolution
+  When checking eliminations, Wild Cards can represent any value.
+  The engine must evaluate all possible Wild Card assignments to
+  determine if an elimination is possible. This is computationally
+  bounded since a row/column has at most 4 cards.
+
+9.5 Performance
+  Target: 1,000,000 four-round games completing in a reasonable time
+  on a modern machine using rayon parallelism. Progress bar updates
+  are essential at this scale so the user knows the simulation is
+  running.
+
+================================================================================
+11. DEPENDENCIES (RUST)
+================================================================================
+
+  tauri = "2.x"          # Desktop app framework
+  serde = "1.x"          # Serialization
+  serde_json = "1.x"     # JSON persistence
+  rand = "0.8"           # Random number generation
+  rayon = "1.x"          # Parallel iteration
+  chrono = "0.4"         # Timestamps
+  uuid = "1.x"           # Run identification
+  dirs = "5.x"           # User data directories
+  tauri-build = "2.x"    # Build support
+
+================================================================================
+END OF SCOPE
+================================================================================
