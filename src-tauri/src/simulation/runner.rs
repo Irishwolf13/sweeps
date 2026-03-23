@@ -5,6 +5,7 @@ use rayon::prelude::*;
 
 use crate::engine::config::GameConfig;
 use crate::engine::game::{play_game, GameResult};
+use crate::history::store;
 use crate::simulation::stats::{aggregate, SimulationSummary};
 
 /// Maximum batch size to limit peak memory usage.
@@ -13,18 +14,19 @@ const BATCH_SIZE: u32 = 50_000;
 
 /// Run a simulation of `num_games` four-round games in parallel.
 /// For large simulations, processes in batches to limit memory.
+/// When `save_detailed` is true, writes raw game data to `{id}_raw.json`.
 pub fn run_simulation(
     config: &GameConfig,
     num_games: u32,
     run_name: String,
     progress: Arc<AtomicU32>,
+    save_detailed: bool,
 ) -> SimulationSummary {
     let id = uuid::Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().to_rfc3339();
 
-    if num_games <= BATCH_SIZE {
-        // Small simulation — collect all at once
-        let results: Vec<GameResult> = (0..num_games)
+    let results: Vec<GameResult> = if num_games <= BATCH_SIZE {
+        (0..num_games)
             .into_par_iter()
             .map(|_| {
                 let mut rng = rand::thread_rng();
@@ -32,13 +34,8 @@ pub fn run_simulation(
                 progress.fetch_add(1, Ordering::Relaxed);
                 result
             })
-            .collect();
-
-        aggregate(&results, config, id, run_name, timestamp)
+            .collect()
     } else {
-        // Large simulation — process in batches, collect all results
-        // but release each batch after aggregation would require streaming stats.
-        // For now, use batched collection to avoid one massive allocation.
         let mut all_results = Vec::with_capacity(num_games as usize);
         let mut remaining = num_games;
 
@@ -58,6 +55,18 @@ pub fn run_simulation(
             remaining -= batch;
         }
 
-        aggregate(&all_results, config, id, run_name, timestamp)
+        all_results
+    };
+
+    // Save raw game data if requested (must happen before results are consumed)
+    if save_detailed {
+        if let Ok(dir) = store::runs_dir() {
+            let raw_path = dir.join(format!("{}_raw.json", id));
+            if let Ok(json) = serde_json::to_string(&results) {
+                let _ = std::fs::write(&raw_path, json);
+            }
+        }
     }
+
+    aggregate(&results, config, id, run_name, timestamp)
 }

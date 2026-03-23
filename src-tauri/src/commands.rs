@@ -41,6 +41,7 @@ pub async fn run_simulation_cmd(
     config: GameConfig,
     num_games: u32,
     run_name: String,
+    save_detailed: bool,
     state: State<'_, AppState>,
 ) -> Result<SimulationSummary, String> {
     config
@@ -59,7 +60,7 @@ pub async fn run_simulation_cmd(
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
-        let summary = runner::run_simulation(&config, num_games, run_name, progress);
+        let summary = runner::run_simulation(&config, num_games, run_name, progress, save_detailed);
         running.store(0, Ordering::Relaxed);
         let _ = tx.send(summary);
     });
@@ -117,6 +118,18 @@ pub fn delete_run_cmd(run_id: String) -> Result<bool, String> {
 #[tauri::command]
 pub fn export_run_to_file_cmd(run_id: String, file_path: String) -> Result<(), String> {
     let csv = store::export_run_csv(&run_id)?;
+    std::fs::write(&file_path, csv).map_err(|e| format!("Failed to write file: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn has_detailed_data_cmd(run_id: String) -> Result<bool, String> {
+    store::has_detailed_data(&run_id)
+}
+
+#[tauri::command]
+pub fn export_run_detailed_to_file_cmd(run_id: String, file_path: String) -> Result<(), String> {
+    let csv = store::export_run_detailed_csv(&run_id)?;
     std::fs::write(&file_path, csv).map_err(|e| format!("Failed to write file: {}", e))?;
     Ok(())
 }

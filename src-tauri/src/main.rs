@@ -21,6 +21,8 @@ fn main() {
             commands::compare_runs_cmd,
             commands::delete_run_cmd,
             commands::export_run_to_file_cmd,
+            commands::has_detailed_data_cmd,
+            commands::export_run_detailed_to_file_cmd,
             commands::start_play_game,
             commands::play_draw,
             commands::play_action,

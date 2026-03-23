@@ -159,7 +159,7 @@ fn test_simulation_runner() {
     let progress = Arc::new(AtomicU32::new(0));
     let num_games = 1000;
 
-    let summary = run_simulation(&config, num_games, "Test Run".to_string(), progress.clone());
+    let summary = run_simulation(&config, num_games, "Test Run".to_string(), progress.clone(), false);
 
     println!("\n=== Simulation Runner: {} games ===", num_games);
     println!("Avg turns/round: {:.1}", summary.avg_turns_per_round);
@@ -204,7 +204,7 @@ fn test_simulation_performance() {
     let num_games = 10_000;
 
     let start = std::time::Instant::now();
-    let summary = run_simulation(&config, num_games, "Perf Test".to_string(), progress);
+    let summary = run_simulation(&config, num_games, "Perf Test".to_string(), progress, false);
     let elapsed = start.elapsed();
 
     println!(
@@ -239,7 +239,7 @@ fn test_custom_card_range() {
     assert!(config.deck.validate(config.player_count).is_ok());
 
     let progress = Arc::new(AtomicU32::new(0));
-    let summary = run_simulation(&config, 100, "Custom Range".to_string(), progress);
+    let summary = run_simulation(&config, 100, "Custom Range".to_string(), progress, false);
 
     assert_eq!(summary.num_games, 100);
     assert!(summary.avg_turns_per_round > 0.0);
@@ -289,12 +289,12 @@ fn test_persistence_cycle() {
     let config = GameConfig::default();
     let progress = Arc::new(AtomicU32::new(0));
 
-    let summary_a = run_simulation(&config, 50, "Persistence Test A".to_string(), Arc::clone(&progress));
+    let summary_a = run_simulation(&config, 50, "Persistence Test A".to_string(), Arc::clone(&progress), false);
     // run_simulation auto-saves via commands, but we test store directly
     store::save_run(&summary_a).expect("save A");
 
     progress.store(0, std::sync::atomic::Ordering::Relaxed);
-    let summary_b = run_simulation(&config, 50, "Persistence Test B".to_string(), progress);
+    let summary_b = run_simulation(&config, 50, "Persistence Test B".to_string(), progress, false);
     store::save_run(&summary_b).expect("save B");
 
     // List
