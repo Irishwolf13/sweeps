@@ -62,6 +62,18 @@ impl Default for ScoringMode {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum StartingOrder {
+    RoundRobin,
+    WorstScoreFirst,
+}
+
+impl Default for StartingOrder {
+    fn default() -> Self {
+        StartingOrder::RoundRobin
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerConfig {
     /// Absolute value threshold for keeping a drawn card [0–10].
@@ -101,6 +113,8 @@ pub struct GameConfig {
     pub allow_matching_elimination: bool,
     pub allow_diagonal_elimination: bool,
     pub scoring_mode: ScoringMode,
+    #[serde(default)]
+    pub starting_order: StartingOrder,
     pub players: Vec<PlayerConfig>,
     pub max_turns_per_round: u32,
 }
@@ -115,6 +129,7 @@ impl Default for GameConfig {
             allow_matching_elimination: true,
             allow_diagonal_elimination: true,
             scoring_mode: ScoringMode::Basic,
+            starting_order: StartingOrder::default(),
             players,
             max_turns_per_round: 500,
         }
@@ -153,5 +168,6 @@ mod tests {
         assert_eq!(config.players.len(), 4);
         assert!(config.allow_matching_elimination);
         assert!(config.allow_diagonal_elimination);
+        assert_eq!(config.starting_order, StartingOrder::RoundRobin);
     }
 }
