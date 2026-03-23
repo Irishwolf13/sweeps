@@ -732,6 +732,7 @@ mod tests {
             keep_threshold: 4,
             line_awareness: 1.0,
             opponent_awareness: 0.8,
+            flip_strategy: Default::default(),
         }
     }
 
@@ -740,6 +741,7 @@ mod tests {
             keep_threshold: 2,
             line_awareness: 0.0,
             opponent_awareness: 0.0,
+            flip_strategy: Default::default(),
         }
     }
 

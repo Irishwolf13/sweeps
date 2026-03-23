@@ -74,6 +74,21 @@ impl Default for StartingOrder {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum FlipStrategy {
+    Random,
+    SameColumn,
+    SameRow,
+    Corners,
+    Diagonal,
+}
+
+impl Default for FlipStrategy {
+    fn default() -> Self {
+        FlipStrategy::Random
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerConfig {
     /// Absolute value threshold for keeping a drawn card [0–10].
@@ -93,6 +108,9 @@ pub struct PlayerConfig {
     /// Low = ignores opponents; High = avoids discarding cards that help
     /// the next player complete a line.
     pub opponent_awareness: f64,
+
+    #[serde(default)]
+    pub flip_strategy: FlipStrategy,
 }
 
 impl Default for PlayerConfig {
@@ -102,6 +120,7 @@ impl Default for PlayerConfig {
             keep_threshold: 4,
             line_awareness: 0.7,
             opponent_awareness: 0.5,
+            flip_strategy: FlipStrategy::default(),
         }
     }
 }
@@ -169,5 +188,6 @@ mod tests {
         assert!(config.allow_matching_elimination);
         assert!(config.allow_diagonal_elimination);
         assert_eq!(config.starting_order, StartingOrder::RoundRobin);
+        assert_eq!(config.players[0].flip_strategy, FlipStrategy::Random);
     }
 }
