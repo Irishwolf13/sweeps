@@ -37,8 +37,9 @@ pub struct CardView {
 pub struct PendingAction {
     pub action_type: String, // "choose_draw_source", "handle_normal_card",
                               // "choose_slide_direction", "not_your_turn",
-                              // "game_over", "round_over"
+                              // "game_over", "round_over", "choose_initial_flips"
     pub drawn_card: Option<CardView>,
+    pub flips_remaining: Option<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -78,6 +79,7 @@ enum InternalPending {
     NotYourTurn,
     RoundOver,
     GameOver,
+    ChooseInitialFlips { remaining: u8 },
 }
 
 #[derive(Clone, Debug)]
@@ -164,11 +166,8 @@ impl InteractiveGame {
         self.trigger_player = None;
         self.final_turns_given = 0;
 
-        if self.current_player == self.human_player {
-            self.pending = InternalPending::ChooseDrawSource;
-        } else {
-            self.pending = InternalPending::NotYourTurn;
-        }
+        // Human always picks initial flips first
+        self.pending = InternalPending::ChooseInitialFlips { remaining: 2 };
     }
 
     // ── Human turn actions ──────────────────────────────────────────────
@@ -195,6 +194,37 @@ impl InteractiveGame {
         let source_name = if source == "draw" { "draw pile" } else { "discard pile" };
         self.action_log.push(format!("You drew {} from the {}.", drawn, source_name));
         self.pending = InternalPending::HandleNormalCard(drawn);
+
+        Ok(())
+    }
+
+    pub fn human_flip_initial(&mut self, row: usize, col: usize) -> Result<(), String> {
+        let remaining = match &self.pending {
+            InternalPending::ChooseInitialFlips { remaining } => *remaining,
+            _ => return Err("Not in initial flip selection phase".to_string()),
+        };
+
+        if row >= 4 || col >= 4 {
+            return Err("Position out of bounds".to_string());
+        }
+
+        if !self.players[self.human_player].grid.flip_card(row, col) {
+            return Err("Card is already face-up".to_string());
+        }
+
+        self.action_log.push(format!("You flipped card at ({},{}).", row, col));
+
+        let new_remaining = remaining - 1;
+        if new_remaining == 0 {
+            // Done picking flips, transition to normal play
+            if self.current_player == self.human_player {
+                self.pending = InternalPending::ChooseDrawSource;
+            } else {
+                self.pending = InternalPending::NotYourTurn;
+            }
+        } else {
+            self.pending = InternalPending::ChooseInitialFlips { remaining: new_remaining };
+        }
 
         Ok(())
     }
@@ -269,6 +299,9 @@ impl InteractiveGame {
         }
         if matches!(self.pending, InternalPending::RoundOver) {
             return Err("Round is over, advance to next round".to_string());
+        }
+        if matches!(self.pending, InternalPending::ChooseInitialFlips { .. }) {
+            return Err("Human must complete initial flip selection first".to_string());
         }
 
         let player_idx = self.current_player;
@@ -688,26 +721,37 @@ impl InteractiveGame {
             InternalPending::ChooseDrawSource => PendingAction {
                 action_type: "choose_draw_source".to_string(),
                 drawn_card: None,
+                flips_remaining: None,
             },
             InternalPending::HandleNormalCard(card) => PendingAction {
                 action_type: "handle_normal_card".to_string(),
                 drawn_card: Some(card_to_view(card)),
+                flips_remaining: None,
             },
             InternalPending::ChooseSlideDirection(_) => PendingAction {
                 action_type: "choose_slide_direction".to_string(),
                 drawn_card: None,
+                flips_remaining: None,
             },
             InternalPending::NotYourTurn => PendingAction {
                 action_type: "not_your_turn".to_string(),
                 drawn_card: None,
+                flips_remaining: None,
             },
             InternalPending::RoundOver => PendingAction {
                 action_type: "round_over".to_string(),
                 drawn_card: None,
+                flips_remaining: None,
             },
             InternalPending::GameOver => PendingAction {
                 action_type: "game_over".to_string(),
                 drawn_card: None,
+                flips_remaining: None,
+            },
+            InternalPending::ChooseInitialFlips { remaining } => PendingAction {
+                action_type: "choose_initial_flips".to_string(),
+                drawn_card: None,
+                flips_remaining: Some(*remaining),
             },
         };
 
