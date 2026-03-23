@@ -14,10 +14,10 @@ const ORIGINAL_QUANTITIES = {
 };
 
 const PLAYER_PRESETS = {
-  Beginner:     { keepThreshold: 2, lineAwareness: 10, opponentAwareness: 0 },
-  Intermediate: { keepThreshold: 3, lineAwareness: 40, opponentAwareness: 20 },
-  Advanced:     { keepThreshold: 4, lineAwareness: 70, opponentAwareness: 50 },
-  Expert:       { keepThreshold: 5, lineAwareness: 95, opponentAwareness: 80 },
+  Beginner:     { keepThreshold: 2, lineAwareness: 10, opponentAwareness: 0,  flipStrategy: 'Random' },
+  Intermediate: { keepThreshold: 3, lineAwareness: 40, opponentAwareness: 20, flipStrategy: 'Random' },
+  Advanced:     { keepThreshold: 4, lineAwareness: 70, opponentAwareness: 50, flipStrategy: 'Random' },
+  Expert:       { keepThreshold: 5, lineAwareness: 95, opponentAwareness: 80, flipStrategy: 'Random' },
 };
 
 // ── Card Quantity Table ───────────────────────────────────────────────────
@@ -128,6 +128,16 @@ function buildPlayerPanel(idx) {
           <span>Ignores others</span><span>Watches opponents</span>
         </div>
       </div>
+      <div class="config-group" style="margin-top:0.6rem">
+        <label>Initial Flip</label>
+        <select id="flip-strategy-${idx}">
+          <option value="Random" ${p.flipStrategy === 'Random' ? 'selected' : ''}>Random</option>
+          <option value="SameColumn" ${p.flipStrategy === 'SameColumn' ? 'selected' : ''}>Same Column</option>
+          <option value="SameRow" ${p.flipStrategy === 'SameRow' ? 'selected' : ''}>Same Row</option>
+          <option value="Corners" ${p.flipStrategy === 'Corners' ? 'selected' : ''}>Corners</option>
+          <option value="Diagonal" ${p.flipStrategy === 'Diagonal' ? 'selected' : ''}>Diagonal</option>
+        </select>
+      </div>
     </div>`;
 }
 
@@ -140,6 +150,7 @@ function applyPlayerPreset(idx, presetName) {
   document.getElementById(`line-aware-val-${idx}`).textContent = p.lineAwareness + '%';
   document.getElementById(`opp-aware-${idx}`).value = p.opponentAwareness;
   document.getElementById(`opp-aware-val-${idx}`).textContent = p.opponentAwareness + '%';
+  document.getElementById(`flip-strategy-${idx}`).value = p.flipStrategy;
 }
 
 function applyToAll() {
@@ -149,6 +160,7 @@ function applyToAll() {
   const keepThresh = document.getElementById(`keep-thresh-${src}`).value;
   const lineAware = document.getElementById(`line-aware-${src}`).value;
   const oppAware = document.getElementById(`opp-aware-${src}`).value;
+  const flipStrategy = document.getElementById(`flip-strategy-${src}`).value;
 
   for (let i = 1; i < count; i++) {
     document.getElementById(`keep-thresh-${i}`).value = keepThresh;
@@ -156,6 +168,7 @@ function applyToAll() {
     document.getElementById(`line-aware-val-${i}`).textContent = lineAware + '%';
     document.getElementById(`opp-aware-${i}`).value = oppAware;
     document.getElementById(`opp-aware-val-${i}`).textContent = oppAware + '%';
+    document.getElementById(`flip-strategy-${i}`).value = flipStrategy;
   }
 }
 
@@ -186,6 +199,7 @@ function buildConfigFromUI() {
       keep_threshold: parseInt(document.getElementById(`keep-thresh-${i}`).value) || 3,
       line_awareness: parseInt(document.getElementById(`line-aware-${i}`).value) / 100,
       opponent_awareness: parseInt(document.getElementById(`opp-aware-${i}`).value) / 100,
+      flip_strategy: document.getElementById(`flip-strategy-${i}`).value,
     });
   }
 
