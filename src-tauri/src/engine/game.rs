@@ -2,7 +2,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use super::card::{build_deck, Card};
-use super::config::{GameConfig, ScoringMode};
+use super::config::{GameConfig, ScoringMode, StartingOrder};
 use super::grid::{EliminationType, PlayerGrid};
 use super::strategy::{self, DrawSource, TurnAction};
 
@@ -68,7 +68,8 @@ pub fn play_game(config: &GameConfig, rng: &mut impl Rng) -> GameResult {
     let mut total_turns = 0u32;
 
     for round_num in 0..4u8 {
-        let result = play_round(config, round_num, rng);
+        let starting = determine_starting_player(config, round_num, &cumulative_scores);
+        let result = play_round(config, round_num, starting, rng);
         total_turns += result.turns;
         for (i, &s) in result.player_round_scores.iter().enumerate() {
             cumulative_scores[i] += s;
@@ -91,9 +92,39 @@ pub fn play_game(config: &GameConfig, rng: &mut impl Rng) -> GameResult {
     }
 }
 
+// ── Starting player logic ─────────────────────────────────────────────────
+
+/// Determine which player starts a round based on config.
+fn determine_starting_player(
+    config: &GameConfig,
+    round_number: u8,
+    cumulative_scores: &[i32],
+) -> usize {
+    let player_count = config.player_count as usize;
+
+    match config.starting_order {
+        StartingOrder::RoundRobin => (round_number as usize) % player_count,
+        StartingOrder::WorstScoreFirst => {
+            if round_number == 0 || cumulative_scores.is_empty() {
+                // Round 0: no scores yet, fall back to round-robin
+                0
+            } else {
+                // Worst = highest score (lower is better in this game).
+                // Ties broken by lowest player index.
+                cumulative_scores
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(i, &score)| (score, -((*i) as i32)))
+                    .map(|(i, _)| i)
+                    .unwrap_or(0)
+            }
+        }
+    }
+}
+
 // ── Round logic ───────────────────────────────────────────────────────────
 
-fn play_round(config: &GameConfig, round_number: u8, rng: &mut impl Rng) -> RoundResult {
+fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng: &mut impl Rng) -> RoundResult {
     let player_count = config.player_count as usize;
 
     // Build and shuffle deck
@@ -124,7 +155,7 @@ fn play_round(config: &GameConfig, round_number: u8, rng: &mut impl Rng) -> Roun
         draw_pile: deck,
         discard_pile,
         players,
-        current_player: (round_number as usize) % player_count,
+        current_player: starting_player,
         turn_number: 0,
         round_ended: false,
         trigger_player: None,
@@ -524,5 +555,38 @@ mod tests {
         let result = play_game(&config, &mut rng);
 
         assert_eq!(result.round_results.len(), 4);
+    }
+
+    #[test]
+    fn test_determine_starting_player_round_robin() {
+        let config = GameConfig::default();
+        assert_eq!(determine_starting_player(&config, 0, &[]), 0);
+        assert_eq!(determine_starting_player(&config, 1, &[0, 0, 0, 0]), 1);
+        assert_eq!(determine_starting_player(&config, 2, &[0, 0, 0, 0]), 2);
+    }
+
+    #[test]
+    fn test_determine_starting_player_worst_first() {
+        let mut config = GameConfig::default();
+        config.starting_order = StartingOrder::WorstScoreFirst;
+
+        // Round 0: always player 0 (no scores)
+        assert_eq!(determine_starting_player(&config, 0, &[]), 0);
+
+        // Player 2 has highest (worst) score
+        assert_eq!(determine_starting_player(&config, 1, &[5, 3, 10, 7]), 2);
+
+        // Tie: players 0 and 3 both have 8 — lowest index wins
+        assert_eq!(determine_starting_player(&config, 2, &[8, 3, 5, 8]), 0);
+    }
+
+    #[test]
+    fn test_play_game_worst_score_first_no_panic() {
+        let mut config = GameConfig::default();
+        config.starting_order = StartingOrder::WorstScoreFirst;
+        let mut rng = rand::thread_rng();
+        let result = play_game(&config, &mut rng);
+        assert_eq!(result.round_results.len(), 4);
+        assert!(result.total_turns > 0);
     }
 }
