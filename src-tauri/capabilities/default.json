@@ -3,6 +3,7 @@
   "description": "Default capabilities for the Number Sweep Simulator",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default"
   ]
 }
