@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
-use number_sweep_sim::engine::config::{DeckConfig, GameConfig, PlayerConfig, ScoringMode};
+use number_sweep_sim::engine::config::{DeckConfig, FlipStrategy, GameConfig, PlayerConfig, ScoringMode};
 use number_sweep_sim::engine::game::play_game;
 use number_sweep_sim::simulation::runner::run_simulation;
 use number_sweep_sim::history::{store, compare};
@@ -102,6 +102,7 @@ fn test_skilled_vs_unskilled() {
         keep_threshold: 4,
         line_awareness: 1.0,
         opponent_awareness: 0.8,
+        flip_strategy: FlipStrategy::Random,
     };
 
     // Player 2: unskilled (random)
@@ -109,6 +110,7 @@ fn test_skilled_vs_unskilled() {
         keep_threshold: 2,
         line_awareness: 0.0,
         opponent_awareness: 0.0,
+        flip_strategy: FlipStrategy::Random,
     };
 
     config.players = vec![skilled, unskilled];

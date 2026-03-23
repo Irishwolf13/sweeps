@@ -135,9 +135,13 @@ impl InteractiveGame {
         deck.shuffle(&mut self.rng);
 
         let mut players = Vec::with_capacity(player_count);
-        for _ in 0..player_count {
+        for i in 0..player_count {
             let hand: Vec<Card> = deck.drain(..16).collect();
-            let grid = PlayerGrid::new(hand, 2, &mut self.rng);
+            let grid = if i == self.human_player {
+                PlayerGrid::new_no_flips(hand)
+            } else {
+                PlayerGrid::new(hand, &self.config.players[i].flip_strategy, &mut self.rng)
+            };
             players.push(PlayerState {
                 grid,
                 went_out_first: false,

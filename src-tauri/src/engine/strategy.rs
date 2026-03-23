@@ -748,8 +748,7 @@ mod tests {
     fn make_grid_all_face_up(values: &[i32]) -> PlayerGrid {
         assert_eq!(values.len(), 16);
         let cards: Vec<Card> = values.iter().map(|&v| Card::Number(v)).collect();
-        let mut rng = rand::thread_rng();
-        let mut grid = PlayerGrid::new(cards, 0, &mut rng);
+        let mut grid = PlayerGrid::new_no_flips(cards);
         for r in 0..4 { for c in 0..4 { grid.flip_card(r, c); } }
         grid
     }

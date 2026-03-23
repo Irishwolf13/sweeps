@@ -2,6 +2,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use super::card::Card;
+use super::config::FlipStrategy;
 
 #[derive(Clone, Debug)]
 pub struct GridCell {
@@ -44,10 +45,65 @@ pub enum SlideDirection {
     Vertical,
 }
 
+/// Given a FlipStrategy, return the 2 positions to flip face-up on a 4x4 grid.
+fn flip_positions(strategy: &FlipStrategy, rng: &mut impl Rng) -> Vec<(usize, usize)> {
+    match strategy {
+        FlipStrategy::Random => {
+            let mut positions: Vec<(usize, usize)> = (0..4)
+                .flat_map(|r| (0..4).map(move |c| (r, c)))
+                .collect();
+            positions.shuffle(rng);
+            positions[..2].to_vec()
+        }
+        FlipStrategy::SameColumn => {
+            let col = rng.gen_range(0..4);
+            let mut rows: Vec<usize> = (0..4).collect();
+            rows.shuffle(rng);
+            vec![(rows[0], col), (rows[1], col)]
+        }
+        FlipStrategy::SameRow => {
+            let row = rng.gen_range(0..4);
+            let mut cols: Vec<usize> = (0..4).collect();
+            cols.shuffle(rng);
+            vec![(row, cols[0]), (row, cols[1])]
+        }
+        FlipStrategy::Corners => {
+            let mut corners = vec![(0, 0), (0, 3), (3, 0), (3, 3)];
+            corners.shuffle(rng);
+            corners[..2].to_vec()
+        }
+        FlipStrategy::Diagonal => {
+            let diag: Vec<(usize, usize)> = if rng.gen_bool(0.5) {
+                vec![(0, 0), (1, 1), (2, 2), (3, 3)]
+            } else {
+                vec![(0, 3), (1, 2), (2, 1), (3, 0)]
+            };
+            let mut diag = diag;
+            diag.shuffle(rng);
+            diag[..2].to_vec()
+        }
+    }
+}
+
 impl PlayerGrid {
     /// Create a new 4x4 grid from 16 cards, all face-down, then flip
-    /// `initial_face_up` random cards.
-    pub fn new(cards: Vec<Card>, initial_face_up: usize, rng: &mut impl Rng) -> Self {
+    /// 2 cards based on the given strategy.
+    pub fn new(cards: Vec<Card>, strategy: &FlipStrategy, rng: &mut impl Rng) -> Self {
+        let mut grid = Self::new_no_flips(cards);
+
+        let positions = flip_positions(strategy, rng);
+        for (r, c) in positions {
+            if let Some(ref mut cell) = grid.cells[r][c] {
+                cell.face_up = true;
+            }
+        }
+
+        grid
+    }
+
+    /// Create a new 4x4 grid with all cards face-down (no initial flips).
+    /// Used for human player in interactive mode who picks their own flips.
+    pub fn new_no_flips(cards: Vec<Card>) -> Self {
         assert!(cards.len() == 16, "Grid requires exactly 16 cards");
 
         let mut cells: Vec<Vec<Option<GridCell>>> = Vec::with_capacity(4);
@@ -64,20 +120,7 @@ impl PlayerGrid {
             cells.push(row);
         }
 
-        let mut grid = PlayerGrid { cells };
-
-        // Flip random cards face-up
-        let mut positions: Vec<(usize, usize)> = (0..4)
-            .flat_map(|r| (0..4).map(move |c| (r, c)))
-            .collect();
-        positions.shuffle(rng);
-        for &(r, c) in positions.iter().take(initial_face_up) {
-            if let Some(ref mut cell) = grid.cells[r][c] {
-                cell.face_up = true;
-            }
-        }
-
-        grid
+        PlayerGrid { cells }
     }
 
     pub fn row_count(&self) -> usize {
@@ -472,6 +515,7 @@ fn check_all_matching(cards: &[&Card]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::config::FlipStrategy;
 
     fn make_grid_from_numbers(values: &[i32]) -> PlayerGrid {
         assert_eq!(values.len(), 16);
@@ -627,5 +671,65 @@ mod tests {
         assert_eq!(grid.remaining_card_count(), 12);
         // Row 0 had [None, 2, 3, 4] → now [2, 3, 4] (3 cells)
         assert_eq!(grid.col_count(0), 3);
+    }
+
+    #[test]
+    fn test_flip_positions_random_returns_2() {
+        let mut rng = rand::thread_rng();
+        let pos = super::flip_positions(&FlipStrategy::Random, &mut rng);
+        assert_eq!(pos.len(), 2);
+        assert_ne!(pos[0], pos[1]);
+    }
+
+    #[test]
+    fn test_flip_positions_same_column() {
+        let mut rng = rand::thread_rng();
+        let pos = super::flip_positions(&FlipStrategy::SameColumn, &mut rng);
+        assert_eq!(pos.len(), 2);
+        assert_eq!(pos[0].1, pos[1].1);
+        assert_ne!(pos[0].0, pos[1].0);
+    }
+
+    #[test]
+    fn test_flip_positions_same_row() {
+        let mut rng = rand::thread_rng();
+        let pos = super::flip_positions(&FlipStrategy::SameRow, &mut rng);
+        assert_eq!(pos.len(), 2);
+        assert_eq!(pos[0].0, pos[1].0);
+        assert_ne!(pos[0].1, pos[1].1);
+    }
+
+    #[test]
+    fn test_flip_positions_corners() {
+        let mut rng = rand::thread_rng();
+        let pos = super::flip_positions(&FlipStrategy::Corners, &mut rng);
+        assert_eq!(pos.len(), 2);
+        let corners = vec![(0,0), (0,3), (3,0), (3,3)];
+        assert!(corners.contains(&pos[0]));
+        assert!(corners.contains(&pos[1]));
+    }
+
+    #[test]
+    fn test_flip_positions_diagonal() {
+        let mut rng = rand::thread_rng();
+        let pos = super::flip_positions(&FlipStrategy::Diagonal, &mut rng);
+        assert_eq!(pos.len(), 2);
+        let main_diag = vec![(0,0), (1,1), (2,2), (3,3)];
+        let anti_diag = vec![(0,3), (1,2), (2,1), (3,0)];
+        let on_main = main_diag.contains(&pos[0]) && main_diag.contains(&pos[1]);
+        let on_anti = anti_diag.contains(&pos[0]) && anti_diag.contains(&pos[1]);
+        assert!(on_main || on_anti);
+    }
+
+    #[test]
+    fn test_new_no_flips_all_face_down() {
+        let cards: Vec<Card> = (0..16).map(|i| Card::Number(i)).collect();
+        let grid = PlayerGrid::new_no_flips(cards);
+        for r in 0..4 {
+            for c in 0..4 {
+                let cell = grid.get(r, c).unwrap();
+                assert!(!cell.face_up, "Cell ({},{}) should be face-down", r, c);
+            }
+        }
     }
 }

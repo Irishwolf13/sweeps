@@ -134,9 +134,9 @@ fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng
 
     // Deal 16 cards to each player
     let mut players = Vec::with_capacity(player_count);
-    for _ in 0..player_count {
+    for i in 0..player_count {
         let hand: Vec<Card> = deck.drain(..16).collect();
-        let grid = PlayerGrid::new(hand, 2, rng);
+        let grid = PlayerGrid::new(hand, &config.players[i].flip_strategy, rng);
         players.push(PlayerState {
             grid,
             went_out_first: false,
