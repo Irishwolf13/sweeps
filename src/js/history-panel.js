@@ -124,17 +124,16 @@ async function viewRun(runId) {
 
 async function exportRun(runId, runName) {
   try {
-    const csv = await tauriExportRunCsv(runId);
-    // Create a downloadable blob
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${runName.replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const safeName = runName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filePath = await window.__TAURI__.dialog.save({
+      defaultPath: `${safeName}.csv`,
+      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+    });
+
+    if (!filePath) return; // User cancelled
+
+    await tauriExportRunToFile(runId, filePath);
+    alert('Export saved successfully!');
   } catch (e) {
     alert('Export failed: ' + e);
   }

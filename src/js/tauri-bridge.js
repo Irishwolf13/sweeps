@@ -32,8 +32,8 @@ async function tauriDeleteRun(runId) {
   return await invoke('delete_run_cmd', { runId: runId });
 }
 
-async function tauriExportRunCsv(runId) {
-  return await invoke('export_run_csv_cmd', { runId: runId });
+async function tauriExportRunToFile(runId, filePath) {
+  return await invoke('export_run_to_file_cmd', { runId: runId, filePath: filePath });
 }
 
 // ── Interactive Play ─────────────────────────────────────────────────────

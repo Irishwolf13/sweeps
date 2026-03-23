@@ -115,8 +115,10 @@ pub fn delete_run_cmd(run_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn export_run_csv_cmd(run_id: String) -> Result<String, String> {
-    store::export_run_csv(&run_id)
+pub fn export_run_to_file_cmd(run_id: String, file_path: String) -> Result<(), String> {
+    let csv = store::export_run_csv(&run_id)?;
+    std::fs::write(&file_path, csv).map_err(|e| format!("Failed to write file: {}", e))?;
+    Ok(())
 }
 
 // ── Interactive Play Commands ────────────────────────────────────────────
