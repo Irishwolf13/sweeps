@@ -4,11 +4,12 @@ async function tauriGetDefaultConfig() {
   return await invoke('get_default_config');
 }
 
-async function tauriRunSimulation(config, numGames, runName) {
+async function tauriRunSimulation(config, numGames, runName, saveDetailed) {
   return await invoke('run_simulation_cmd', {
     config: config,
     numGames: numGames,
     runName: runName,
+    saveDetailed: saveDetailed,
   });
 }
 
@@ -34,6 +35,14 @@ async function tauriDeleteRun(runId) {
 
 async function tauriExportRunToFile(runId, filePath) {
   return await invoke('export_run_to_file_cmd', { runId: runId, filePath: filePath });
+}
+
+async function tauriHasDetailedData(runId) {
+  return await invoke('has_detailed_data_cmd', { runId: runId });
+}
+
+async function tauriExportRunDetailedToFile(runId, filePath) {
+  return await invoke('export_run_detailed_to_file_cmd', { runId: runId, filePath: filePath });
 }
 
 // ── Interactive Play ─────────────────────────────────────────────────────

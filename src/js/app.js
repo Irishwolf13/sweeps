@@ -64,7 +64,8 @@ async function runSimulation() {
   }, 250);
 
   try {
-    const summary = await tauriRunSimulation(config, numGames, runName);
+    const saveDetailed = document.getElementById('save-detailed').checked;
+    const summary = await tauriRunSimulation(config, numGames, runName, saveDetailed);
     currentSummary = summary;
     displayResults(summary);
     switchTab('results');
