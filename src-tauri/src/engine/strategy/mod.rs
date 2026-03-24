@@ -1,4 +1,5 @@
 mod line_scoring;
+mod methodical;
 mod opportunist;
 
 use rand::Rng;
@@ -70,12 +71,16 @@ pub fn choose_draw_source(
     grid: &PlayerGrid,
     neg_min: i32,
     pos_max: i32,
+    methodical_state: &mut Option<MethodicalState>,
     rng: &mut impl Rng,
 ) -> DrawSource {
     match config.archetype {
         AiArchetype::Opportunist => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
-        // Methodical and Calculator will be added in later tasks
-        _ => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
+        AiArchetype::Methodical => {
+            let state = methodical_state.get_or_insert_with(MethodicalState::new);
+            methodical::choose_draw_source(config, discard_top, grid, neg_min, pos_max, state, rng)
+        }
+        AiArchetype::Calculator => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng), // stub until Task 5
     }
 }
 
@@ -85,12 +90,16 @@ pub fn choose_action(
     grid: &PlayerGrid,
     neg_min: i32,
     pos_max: i32,
+    methodical_state: &mut Option<MethodicalState>,
     rng: &mut impl Rng,
 ) -> TurnAction {
     match config.archetype {
         AiArchetype::Opportunist => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
-        // Methodical and Calculator will be added in later tasks
-        _ => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
+        AiArchetype::Methodical => {
+            let state = methodical_state.get_or_insert_with(MethodicalState::new);
+            methodical::choose_action(config, drawn_card, grid, neg_min, pos_max, state, rng)
+        }
+        AiArchetype::Calculator => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng), // stub until Task 5
     }
 }
 
