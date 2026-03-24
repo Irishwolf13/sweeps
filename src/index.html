@@ -164,20 +164,30 @@
       <div id="play-setup" class="play-setup">
         <div class="config-section">
           <h2>Play a Game</h2>
-          <p class="play-description">Play against 3 AI opponents. You are South, AI players are West, North, and East.</p>
+          <p class="play-description">Play against AI opponents. You are always Player 1.</p>
           <div class="config-row">
             <div class="config-group">
-              <label>AI Skill Preset</label>
-              <select id="play-ai-preset">
-                <option value="beginner">Beginner</option>
-                <option value="intermediate" selected>Intermediate</option>
-                <option value="advanced">Advanced</option>
-                <option value="expert">Expert</option>
+              <label>Players</label>
+              <select id="play-player-count" onchange="buildPlayAiPanels()">
+                <option value="2">2 Players</option>
+                <option value="3">3 Players</option>
+                <option value="4" selected>4 Players</option>
+                <option value="5">5 Players</option>
+                <option value="6">6 Players</option>
               </select>
             </div>
             <div class="config-group">
-              <button class="btn-primary" onclick="startPlayGame()">Start Game</button>
+              <label>Quick Fill</label>
+              <div style="display:flex;gap:0.3rem">
+                <button class="btn-secondary btn-sm" onclick="quickFillAi('beginner')">All Beginner</button>
+                <button class="btn-secondary btn-sm" onclick="quickFillAi('expert')">All Expert</button>
+                <button class="btn-secondary btn-sm" onclick="quickFillAi('mixed')">Mixed</button>
+              </div>
             </div>
+          </div>
+          <div id="play-ai-panels"></div>
+          <div style="margin-top:1rem">
+            <button class="btn-primary" onclick="startPlayGame()">Start Game</button>
           </div>
         </div>
       </div>
@@ -196,43 +206,26 @@
 
           <!-- Board + action panel (right, 3/4) -->
           <div class="play-board-area">
-            <!-- Game board with compass layout -->
+            <!-- Game board with dynamic layout -->
             <div class="play-table">
-              <!-- North (AI 2) -->
-              <div class="play-position play-north">
-                <div class="play-player-label" id="label-north">North (AI)</div>
-                <div class="play-grid" id="grid-north"></div>
+              <!-- Human player (always bottom) -->
+              <div class="play-position play-human">
+                <div class="play-player-label" id="label-player-0">You</div>
+                <div class="play-grid" id="grid-player-0"></div>
               </div>
-
-              <!-- Middle row: West, Center, East -->
-              <div class="play-middle">
-                <div class="play-position play-west">
-                  <div class="play-player-label" id="label-west">West (AI)</div>
-                  <div class="play-grid play-grid-vertical" id="grid-west"></div>
+              <!-- AI players rendered dynamically above -->
+              <div class="play-ai-grids" id="play-ai-grids"></div>
+              <!-- Center piles -->
+              <div class="play-center">
+                <div class="play-pile" id="draw-pile" onclick="handleDrawClick('draw')">
+                  <div class="pile-label">Draw</div>
+                  <div class="pile-card pile-draw" id="draw-pile-card">?</div>
+                  <div class="pile-count" id="draw-pile-count">0</div>
                 </div>
-
-                <div class="play-center">
-                  <div class="play-pile" id="draw-pile" onclick="handleDrawClick('draw')">
-                    <div class="pile-label">Draw</div>
-                    <div class="pile-card pile-draw" id="draw-pile-card">?</div>
-                    <div class="pile-count" id="draw-pile-count">0</div>
-                  </div>
-                  <div class="play-pile" id="discard-pile" onclick="handleDrawClick('discard')">
-                    <div class="pile-label">Discard</div>
-                    <div class="pile-card pile-discard" id="discard-pile-card">-</div>
-                  </div>
+                <div class="play-pile" id="discard-pile" onclick="handleDrawClick('discard')">
+                  <div class="pile-label">Discard</div>
+                  <div class="pile-card pile-discard" id="discard-pile-card">-</div>
                 </div>
-
-                <div class="play-position play-east">
-                  <div class="play-player-label" id="label-east">East (AI)</div>
-                  <div class="play-grid play-grid-vertical" id="grid-east"></div>
-                </div>
-              </div>
-
-              <!-- South (You) -->
-              <div class="play-position play-south">
-                <div class="play-player-label" id="label-south">You</div>
-                <div class="play-grid" id="grid-south"></div>
               </div>
             </div>
 
