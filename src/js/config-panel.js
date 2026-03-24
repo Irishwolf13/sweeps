@@ -20,6 +20,14 @@ const PLAYER_PRESETS = {
   Expert:       { archetype: 'Calculator',  skill: 100, flipStrategy: 'Random' },
 };
 
+const DECK_PRESETS_BY_PLAYERS = {
+  2: { quantities: {'-5':3,'-4':4,'-3':5,'-2':6,'-1':8,'0':10,'1':8,'2':8,'3':7,'4':6,'5':5,'6':4,'7':4,'8':4}, wildCount: 8 },
+  3: { quantities: {'-5':4,'-4':5,'-3':6,'-2':8,'-1':9,'0':11,'1':9,'2':9,'3':9,'4':8,'5':7,'6':6,'7':5,'8':6}, wildCount: 10 },
+  4: { quantities: {'-5':5,'-4':6,'-3':8,'-2':9,'-1':11,'0':13,'1':11,'2':11,'3':10,'4':9,'5':8,'6':7,'7':6,'8':6}, wildCount: 12 },
+  5: { quantities: {'-5':6,'-4':7,'-3':9,'-2':11,'-1':13,'0':15,'1':13,'2':13,'3':12,'4':11,'5':9,'6':8,'7':7,'8':6}, wildCount: 14 },
+  6: { quantities: {'-5':7,'-4':9,'-3':11,'-2':13,'-1':15,'0':17,'1':15,'2':15,'3':14,'4':12,'5':11,'6':9,'7':8,'8':8}, wildCount: 16 },
+};
+
 // ── Card Quantity Table ───────────────────────────────────────────────────
 
 function buildCardQuantityTable() {
@@ -198,8 +206,25 @@ function buildConfigFromUI() {
   };
 }
 
+function applyDeckPresetForPlayers(count) {
+  const preset = DECK_PRESETS_BY_PLAYERS[count];
+  if (!preset) return;
+
+  document.getElementById('wild-count').value = preset.wildCount;
+  buildCardQuantityTable();
+  document.querySelectorAll('.card-qty').forEach(input => {
+    const v = input.dataset.value;
+    input.value = preset.quantities[v] || 0;
+  });
+  updateTotalCards();
+}
+
 // ── Event Listeners ───────────────────────────────────────────────────────
 
-document.getElementById('player-count').addEventListener('change', buildPlayerPanels);
+document.getElementById('player-count').addEventListener('change', () => {
+  const count = parseInt(document.getElementById('player-count').value);
+  applyDeckPresetForPlayers(count);
+  buildPlayerPanels();
+});
 document.getElementById('neg-min').addEventListener('change', buildCardQuantityTable);
 document.getElementById('pos-max').addEventListener('change', buildCardQuantityTable);
