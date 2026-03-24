@@ -99,7 +99,7 @@ pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max:
         return 0.0; // Line becomes hopeless
     }
 
-    // Score based on how close we are
+    // Score based on how close we are AND how well this card fits
     let total_slots = line.positions.len();
     let known_after = total_slots - remaining_unknowns;
     let progress = known_after as f64 / total_slots as f64;
@@ -113,8 +113,20 @@ pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max:
         }
     }
 
-    // Sum-to-zero progress
-    10.0 + progress * 50.0
+    // Gap-aware scoring: how close is new_gap to 0 relative to the achievable range?
+    // A card that brings gap closer to 0 scores much higher than one that barely keeps it viable.
+    let range = (max_p - min_p) as f64;
+    let gap_closeness = if range > 0.0 {
+        // 1.0 when new_gap == 0 (perfect), 0.0 when at edge of range
+        1.0 - (new_gap.abs() as f64 / (range / 2.0)).min(1.0)
+    } else {
+        if new_gap == 0 { 1.0 } else { 0.0 }
+    };
+
+    // Base score from progress + bonus from gap quality
+    let base = 10.0 + progress * 30.0;
+    let gap_bonus = gap_closeness * 30.0;
+    base + gap_bonus
 }
 
 /// Find the best position to place a card, considering net impact on all lines.
