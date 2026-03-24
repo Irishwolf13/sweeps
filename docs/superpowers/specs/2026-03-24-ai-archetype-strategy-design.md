@@ -36,12 +36,14 @@ pub struct PlayerConfig {
 
 **New PlayerConfig:**
 ```rust
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum AiArchetype {
     Opportunist,  // Line-first reactive play
     Methodical,   // Scout → Build → Close phases
     Calculator,   // Score every move, pick optimal
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerConfig {
     pub archetype: AiArchetype,
     pub skill: f64,               // 0.0-1.0, execution quality
@@ -52,14 +54,37 @@ pub struct PlayerConfig {
 **Preset constructors:**
 ```rust
 impl PlayerConfig {
-    pub fn beginner() -> Self { /* Opportunist, skill 0.3 */ }
-    pub fn intermediate() -> Self { /* Methodical, skill 0.6 */ }
-    pub fn advanced() -> Self { /* Opportunist, skill 0.85 */ }
-    pub fn expert() -> Self { /* Calculator, skill 1.0 */ }
+    pub fn beginner() -> Self { /* Opportunist, skill 0.3, FlipStrategy::Random */ }
+    pub fn intermediate() -> Self { /* Methodical, skill 0.6, FlipStrategy::Random */ }
+    pub fn advanced() -> Self { /* Opportunist, skill 0.85, FlipStrategy::Random */ }
+    pub fn expert() -> Self { /* Calculator, skill 1.0, FlipStrategy::Random */ }
 }
 ```
 
+All presets default to `FlipStrategy::Random`. FlipStrategy is orthogonal to archetype choice and remains independently configurable.
+
 Default game config: 4 players using beginner, intermediate, advanced, expert presets.
+
+### Additional Strategy Functions: Discard Selection & Slide Direction
+
+The current strategy module exposes five public functions. The spec above covers `choose_draw_source` and `choose_action`. The remaining three also need archetype-aware behavior:
+
+**`choose_discard_from_eliminated(config, eliminated_cards, rng) -> usize`**
+Chooses which eliminated card to place on the discard pile. All archetypes use the same logic (this is a simple tactical decision, not a strategic one):
+- Discard the highest absolute value card. Never discard a Wild.
+- Skill-gated: on skill check fail, pick a random card to discard.
+
+**`choose_discard_with_opponent(config, eliminated_cards, next_grid, ...) -> usize`**
+Chooses discard considering the next player's grid. Replaces the removed `opponent_awareness` field:
+- Skill ≥ 0.5: Check if the default discard choice would help the next player complete a line (using `card_fits_line` from shared infra). If so, find an alternative that doesn't help them.
+- Skill < 0.5: No opponent consideration, just use `choose_discard_from_eliminated`.
+- The skill dial replaces `opponent_awareness` — higher skill = more likely to notice and avoid helping opponents.
+
+**`choose_slide_direction(config, grid, eliminated_kind, rng) -> SlideDirection`**
+Chooses horizontal vs vertical slide after diagonal elimination:
+- Skill-gated: on fail, random direction.
+- On success, simulate both directions, score the resulting grids using `score_all_lines`, pick the one with better line potential.
+- Same logic for all archetypes (tactical, not strategic).
 
 ### Shared Infrastructure: Line Scoring
 
@@ -72,22 +97,22 @@ All three archetypes share a line-scoring foundation that replaces the current `
 - `current_sum: i32` — sum of face-up number cards
 - `wild_count: usize` — face-up wilds in the line
 - `gap: i32` — what remaining cards need to sum to (`-current_sum`)
-- `gap_achievable: bool` — can face-down + wilds theoretically fill the gap?
+- `gap_achievable: bool` — can face-down + wilds theoretically fill the gap? Each unknown (face-down) card is assumed to range over `[neg_min, pos_max]`. This is a conservative bound; the Calculator may optionally tighten this using deck-distribution awareness at high skill.
 - `cards_needed: usize` — number of unresolved positions (`face_down_count`)
 - `matching_value: Option<i32>` — if all face-up numbers match, what value
 - `matching_viable: bool` — could this line still be all-matching?
 
-**LineScore** — how close to elimination:
+**LineScore** — a `f64` value (0-100) representing how close to elimination. The categories below are scoring guidelines, not an enum:
 - **Completable** (100): 0 face-down, gap achievable with wilds alone
 - **One away** (70-90): 1 face-down, gap is a single achievable value. Higher score if that value is common in the deck.
 - **Two away** (30-60): 2 face-down, gap achievable. Higher score if needed value range is wide (easier to hit).
 - **Hopeless** (0): Gap not achievable given remaining unknowns, or too many face-down
 
 **Key functions:**
-- `score_all_lines(grid) -> Vec<(LineStatus, f64)>` — score every line in the grid
+- `score_all_lines(grid) -> Vec<(LineStatus, f64)>` — score every line in the grid, returning LineStatus and its f64 score
 - `card_fits_line(card, line) -> f64` — 0-100, how well a card helps a specific line. 100 = completes it.
 - `best_placement(card, grid) -> (position, net_score)` — best position considering all lines, accounting for helping one line while hurting another
-- `needed_cards(line) -> Vec<i32>` — what specific values would complete this line
+- `needed_cards(line) -> Vec<i32>` — what specific values would complete this line. Only meaningful when `face_down_count == 1` (the Close phase use case). Returns the single value needed at the unknown position. When `face_down_count > 1`, returns empty (too many combinations to enumerate usefully).
 
 ### Archetype 1: Opportunist (Line-First Reactive)
 
@@ -121,6 +146,12 @@ struct MethodicalState {
 }
 enum Phase { Scout, Build, Close }
 ```
+
+**State lifetime and storage:**
+- `MethodicalState` is created at the start of each round and reset between rounds.
+- **In `game.rs` (bulk simulation):** Add an `Option<MethodicalState>` to `PlayerState`. Initialized to `Some(MethodicalState::new())` for Methodical players, `None` for others. Passed as `&mut Option<MethodicalState>` to strategy functions. This is a targeted change to `PlayerState`, not a rearchitecture of the game loop.
+- **In `state.rs` (interactive):** Same pattern — store `Option<MethodicalState>` per player in `InteractiveGame`. Reset on `start_round`.
+- **Grid reshape invalidation:** Any elimination that changes grid dimensions (diagonal elimination + reshape, or row/column elimination + cleanup) forces `target_lines` to be cleared and phase to reset to `Build`. The Methodical re-evaluates targets on the new grid shape. This handles cascading eliminations naturally.
 
 **Phase 1 — Scout:**
 - Active while face-down ratio exceeds a threshold (skill-dependent: high skill scouts less, ~3-4 turns; low skill scouts longer, ~6-8 turns)
@@ -187,7 +218,7 @@ Each decision point (draw choice, place choice, flip target) independently rolls
 
 Fallback behavior when skill check fails:
 - Draw: random source (50/50)
-- Place: if card abs value ≤ 3, replace a random face-down; otherwise discard + flip random face-down
+- Place: if card abs value ≤ 3, replace a random face-down; otherwise discard + flip random face-down. The threshold of 3 is a hardcoded design choice replacing the old per-player `keep_threshold` — it represents "cards that are unlikely to hurt you anywhere."
 - This ensures even "failed" decisions aren't catastrophically bad
 
 ## Files Changed
@@ -199,11 +230,11 @@ Fallback behavior when skill check fails:
   - `strategy/opportunist.rs` — Opportunist decision logic
   - `strategy/methodical.rs` — Methodical phase state machine and decisions
   - `strategy/calculator.rs` — Calculator scoring and optional lookahead
-  - `strategy/mod.rs` — public API: `choose_draw_source`, `choose_action` dispatch to archetype
-- **game.rs**: Minimal changes. `play_turn` calls same strategy API, which now dispatches internally.
+  - `strategy/mod.rs` — public API: `choose_draw_source`, `choose_action`, `choose_discard_from_eliminated`, `choose_discard_with_opponent`, `choose_slide_direction` — all dispatch through skill dial, first three dispatch to archetype-specific logic
+- **game.rs**: Moderate changes. `play_turn` calls same strategy API. `PlayerState` gains `Option<MethodicalState>` for Methodical archetype state. State initialized at round start, reset between rounds. Passed to strategy functions as `&mut Option<MethodicalState>`.
 
 ### Backend (src-tauri/src/interactive/)
-- **state.rs**: Update to use new PlayerConfig. Methodical needs per-player state stored between turns. Calculator lookahead enabled for interactive mode.
+- **state.rs**: Update to use new PlayerConfig. Add `Vec<Option<MethodicalState>>` to `InteractiveGame`, indexed by player. Reset on `start_round`. Calculator lookahead enabled for interactive mode. ~50ms per AI turn with 3 AI players = ~1.5 seconds of blocking per round — acceptable for interactive play.
 
 ### Frontend (src/js/)
 - **Player config panels**: Replace keep_threshold/line_awareness/opponent_awareness sliders with archetype dropdown + skill slider.
@@ -213,7 +244,7 @@ Fallback behavior when skill check fails:
 
 - Unit tests for `line_scoring.rs`: verify LineStatus computation, card_fits_line scoring, best_placement correctness
 - Unit tests per archetype: verify decision logic with known grid states
-- Integration test: run 100 games, assert average turns/round < 45 (significant improvement over current ~60)
+- Integration test: run 100 games, assert average turns/round < 42 (meaningful improvement over current ~60, close to 28-40 target)
 - Regression: existing game flow tests still pass (round completion, scoring, elimination cascades)
 - Performance: 50,000 games with mixed archetypes completes under 10 minutes
 
