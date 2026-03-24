@@ -186,6 +186,7 @@ function displayResults(summary) {
       <div class="stat-card">
         <h3>Deck Health</h3>
         <div class="stat-row"><span class="label">Draw pile exhaustion</span><span class="value">${summary.draw_pile_exhaustion_rate.toFixed(1)}%</span></div>
+        <div class="stat-row"><span class="label">Avg draw pile remaining</span><span class="value">${summary.avg_draw_pile_remaining.toFixed(1)} cards</span></div>
         <div class="stat-row"><span class="label">Effective deck usage</span><span class="value">${summary.effective_deck_usage.toFixed(1)}%</span></div>
         <div class="stat-row"><span class="label">Round completion rate</span><span class="value">${summary.round_completion_rate.toFixed(1)}%</span></div>
       </div>
