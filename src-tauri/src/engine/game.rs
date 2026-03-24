@@ -31,6 +31,7 @@ pub struct RoundResult {
     pub total_cards_drawn: u32,
     pub total_deck_size: u32,
     pub round_completed_naturally: bool,
+    pub draw_pile_remaining: u32,
 }
 
 // ── Player state within a round ───────────────────────────────────────────
@@ -216,6 +217,7 @@ fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng
         total_cards_drawn: state.total_cards_drawn,
         total_deck_size: state.total_deck_size,
         round_completed_naturally: state.trigger_player.is_some(),
+        draw_pile_remaining: state.draw_pile.len() as u32,
     }
 }
 
