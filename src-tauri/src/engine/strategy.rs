@@ -224,7 +224,7 @@ pub fn choose_draw_source(
     }
 
     // Check if this card would complete a line (always take it!)
-    if rng.gen_bool(config.line_awareness.max(0.05)) {
+    if rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.05)) {
         let lines = analyze_lines(grid);
         let card_value = match card { Card::Number(v) => *v, Card::Wild => 0 };
         for line in &lines {
@@ -241,12 +241,12 @@ pub fn choose_draw_source(
     }
 
     // Keep threshold check
-    if is_keepable(card, config.keep_threshold) {
+    if is_keepable(card, (config.skill * 10.0) as i32 /* TODO(task-3): replace with archetype logic */) {
         return DrawSource::DiscardPile;
     }
 
     // Mediocre card: check if it meaningfully helps a line
-    if rng.gen_bool(config.line_awareness.max(0.05)) {
+    if rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.05)) {
         let lines = analyze_lines(grid);
         let card_value = match card { Card::Number(v) => *v, Card::Wild => 0 };
         let mut best_help = 0.0f64;
@@ -298,7 +298,7 @@ pub fn choose_action(
 
     // ═══ PRIORITY 1: Does this card complete a line? ═══════════════════
     // Even mediocre players spot an obvious completion most of the time.
-    if rng.gen_bool(config.line_awareness.max(0.15)) {
+    if rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.15)) {
         // Check face-down positions: placing drawn card there completes a line
         for &(r, c) in &face_down {
             for line in &lines {
@@ -331,13 +331,13 @@ pub fn choose_action(
     }
 
     // ═══ PRIORITY 2: Keepable card → replace face-down or bad face-up ══
-    if is_wild || is_keepable(drawn_card, config.keep_threshold) {
+    if is_wild || is_keepable(drawn_card, (config.skill * 10.0) as i32 /* TODO(task-3): replace with archetype logic */) {
         // Check if there's a face-up card that's really bad
         let worst = find_worst_face_up(grid, &occupied);
         if let Some((wr, wc, worst_abs)) = worst {
             // Replace it if it's much worse than our drawn card
             // (e.g. drawn a 2, grid has a 10 → replace the 10)
-            if worst_abs > (config.keep_threshold + 3).max(drawn_value.abs() + 3) {
+            if worst_abs > ((config.skill * 10.0) as i32 /* TODO(task-3): replace with archetype logic */ + 3).max(drawn_value.abs() + 3) {
                 // But never replace a Wild
                 if let Some(gc) = grid.get(wr, wc) {
                     if !matches!(gc.card, Card::Wild) {
@@ -355,7 +355,7 @@ pub fn choose_action(
     }
 
     // ═══ PRIORITY 3: Not keepable, but helps a near-complete line? ══════
-    if rng.gen_bool(config.line_awareness.max(0.05)) {
+    if rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.05)) {
         let mut best_score = 0.0f64;
         let mut best_pos: Option<(usize, usize)> = None;
 
@@ -427,7 +427,7 @@ pub fn choose_discard_with_opponent(
 
     let base_idx = choose_discard_from_eliminated(config, eliminated_cards, rng);
 
-    if config.opponent_awareness <= 0.0 || !rng.gen_bool(config.opponent_awareness) {
+    if config.skill /* TODO(task-3): replace with archetype logic */ <= 0.0 || !rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */) {
         return base_idx;
     }
 
@@ -484,7 +484,7 @@ pub fn choose_slide_direction(
     _eliminated_kind: &EliminationType,
     rng: &mut impl Rng,
 ) -> SlideDirection {
-    if !rng.gen_bool(config.line_awareness.max(0.2)) {
+    if !rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.2)) {
         return if rng.gen_bool(0.5) {
             SlideDirection::Horizontal
         } else {
@@ -538,7 +538,7 @@ fn pick_face_down_target(
         return (0, 0);
     }
 
-    if !rng.gen_bool(config.line_awareness.max(0.1)) {
+    if !rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.1)) {
         return face_down[rng.gen_range(0..face_down.len())];
     }
 
@@ -579,7 +579,7 @@ fn pick_flip_target(
         return (0, 0);
     }
 
-    if !rng.gen_bool(config.line_awareness.max(0.1)) {
+    if !rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.1)) {
         return face_down[rng.gen_range(0..face_down.len())];
     }
 
@@ -674,7 +674,7 @@ fn pick_best_replace(
 
     let is_wild = matches!(drawn_card, Card::Wild);
 
-    if rng.gen_bool(config.line_awareness.max(0.1)) {
+    if rng.gen_bool(config.skill /* TODO(task-3): replace with archetype logic */.max(0.1)) {
         let lines = analyze_lines(grid);
         let mut best_score = f64::NEG_INFINITY;
         let mut best_pos = occupied[0];
@@ -728,21 +728,13 @@ mod tests {
     use crate::engine::config::PlayerConfig;
 
     fn skilled_config() -> PlayerConfig {
-        PlayerConfig {
-            keep_threshold: 4,
-            line_awareness: 1.0,
-            opponent_awareness: 0.8,
-            flip_strategy: Default::default(),
-        }
+        // TODO(task-3): update once Opportunist/Calculator strategy logic is wired
+        PlayerConfig::expert()
     }
 
     fn unskilled_config() -> PlayerConfig {
-        PlayerConfig {
-            keep_threshold: 2,
-            line_awareness: 0.0,
-            opponent_awareness: 0.0,
-            flip_strategy: Default::default(),
-        }
+        // TODO(task-3): update once Opportunist strategy logic is wired
+        PlayerConfig::beginner()
     }
 
     fn make_grid_all_face_up(values: &[i32]) -> PlayerGrid {

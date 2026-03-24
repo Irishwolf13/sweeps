@@ -89,39 +89,50 @@ impl Default for FlipStrategy {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum AiArchetype {
+    Opportunist,
+    Methodical,
+    Calculator,
+}
+
+impl Default for AiArchetype {
+    fn default() -> Self {
+        AiArchetype::Opportunist
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerConfig {
-    /// Absolute value threshold for keeping a drawn card [0–10].
-    /// If the drawn card's |value| <= this threshold, AI keeps it and replaces
-    /// a face-down card. Above this, AI leans toward discarding & flipping.
-    /// Example: 3 means keep anything |val| <= 3, discard 4+ unless it helps a line.
-    pub keep_threshold: i32,
-
-    /// How well the player spots and plays toward line completions [0.0–1.0].
-    /// This is the PRIMARY skill knob.
-    /// Low = ignores line potential, just uses keep_threshold;
-    /// High = always checks if a card completes/nearly completes a line first,
-    /// sees cascade potential, picks smart flip targets.
-    pub line_awareness: f64,
-
-    /// How much the player considers what the next player needs [0.0–1.0].
-    /// Low = ignores opponents; High = avoids discarding cards that help
-    /// the next player complete a line.
-    pub opponent_awareness: f64,
-
+    pub archetype: AiArchetype,
+    /// 0.0 = random play, 1.0 = perfect execution of archetype strategy
+    pub skill: f64,
     #[serde(default)]
     pub flip_strategy: FlipStrategy,
 }
 
 impl Default for PlayerConfig {
     fn default() -> Self {
-        // Advanced preset
         PlayerConfig {
-            keep_threshold: 4,
-            line_awareness: 0.7,
-            opponent_awareness: 0.5,
+            archetype: AiArchetype::Opportunist,
+            skill: 0.85,
             flip_strategy: FlipStrategy::default(),
         }
+    }
+}
+
+impl PlayerConfig {
+    pub fn beginner() -> Self {
+        PlayerConfig { archetype: AiArchetype::Opportunist, skill: 0.3, flip_strategy: FlipStrategy::Random }
+    }
+    pub fn intermediate() -> Self {
+        PlayerConfig { archetype: AiArchetype::Methodical, skill: 0.6, flip_strategy: FlipStrategy::Random }
+    }
+    pub fn advanced() -> Self {
+        PlayerConfig { archetype: AiArchetype::Opportunist, skill: 0.85, flip_strategy: FlipStrategy::Random }
+    }
+    pub fn expert() -> Self {
+        PlayerConfig { archetype: AiArchetype::Calculator, skill: 1.0, flip_strategy: FlipStrategy::Random }
     }
 }
 
@@ -141,7 +152,12 @@ pub struct GameConfig {
 impl Default for GameConfig {
     fn default() -> Self {
         let player_count = 4u8;
-        let players = (0..player_count).map(|_| PlayerConfig::default()).collect();
+        let players = vec![
+            PlayerConfig::beginner(),
+            PlayerConfig::intermediate(),
+            PlayerConfig::advanced(),
+            PlayerConfig::expert(),
+        ];
         GameConfig {
             deck: DeckConfig::default(),
             player_count,
@@ -189,5 +205,36 @@ mod tests {
         assert!(config.allow_diagonal_elimination);
         assert_eq!(config.starting_order, StartingOrder::RoundRobin);
         assert_eq!(config.players[0].flip_strategy, FlipStrategy::Random);
+    }
+
+    #[test]
+    fn test_ai_archetype_serialization() {
+        let config = PlayerConfig {
+            archetype: AiArchetype::Opportunist,
+            skill: 0.7,
+            flip_strategy: FlipStrategy::Random,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: PlayerConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.archetype, AiArchetype::Opportunist);
+        assert!((deserialized.skill - 0.7).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_player_presets() {
+        let b = PlayerConfig::beginner();
+        assert_eq!(b.archetype, AiArchetype::Opportunist);
+        assert!((b.skill - 0.3).abs() < f64::EPSILON);
+
+        let i = PlayerConfig::intermediate();
+        assert_eq!(i.archetype, AiArchetype::Methodical);
+
+        let a = PlayerConfig::advanced();
+        assert_eq!(a.archetype, AiArchetype::Opportunist);
+        assert!(a.skill > 0.8);
+
+        let e = PlayerConfig::expert();
+        assert_eq!(e.archetype, AiArchetype::Calculator);
+        assert!((e.skill - 1.0).abs() < f64::EPSILON);
     }
 }
