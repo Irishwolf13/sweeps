@@ -3,9 +3,9 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use super::card::{build_deck, Card};
-use super::config::{GameConfig, ScoringMode, StartingOrder};
+use super::config::{AiArchetype, GameConfig, ScoringMode, StartingOrder};
 use super::grid::{EliminationType, PlayerGrid};
-use super::strategy::{self, DrawSource, TurnAction};
+use super::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
 // ── Result types ──────────────────────────────────────────────────────────
 
@@ -50,6 +50,7 @@ struct RoundState {
     draw_pile: Vec<Card>,
     discard_pile: Vec<Card>,
     players: Vec<PlayerState>,
+    methodical_states: Vec<Option<MethodicalState>>,
     current_player: usize,
     turn_number: u32,
     round_ended: bool,
@@ -145,6 +146,13 @@ fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng
         });
     }
 
+    let methodical_states: Vec<Option<MethodicalState>> = (0..player_count)
+        .map(|i| match config.players[i].archetype {
+            AiArchetype::Methodical => Some(MethodicalState::new()),
+            _ => None,
+        })
+        .collect();
+
     // Remaining cards form draw pile, flip top for discard
     let mut discard_pile = Vec::new();
     if let Some(top) = deck.pop() {
@@ -156,6 +164,7 @@ fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng
         draw_pile: deck,
         discard_pile,
         players,
+        methodical_states,
         current_player: starting_player,
         turn_number: 0,
         round_ended: false,
@@ -238,8 +247,8 @@ fn play_turn(config: &GameConfig, state: &mut RoundState, rng: &mut impl Rng) {
     }
 
     // 1. Choose draw source
-    let discard_top = state.discard_pile.last();
-    let source = strategy::choose_draw_source(player_config, discard_top, &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, rng);
+    let discard_top = state.discard_pile.last().cloned();
+    let source = strategy::choose_draw_source(player_config, discard_top.as_ref(), &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, &mut state.methodical_states[player_idx], rng);
 
     // 2. Draw a card
     let drawn = match draw_card(state, source, rng) {
@@ -307,7 +316,7 @@ fn handle_normal_draw(
     rng: &mut impl Rng,
 ) {
     let player_config = &config.players[player_idx];
-    let action = strategy::choose_action(player_config, &drawn, &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, rng);
+    let action = strategy::choose_action(player_config, &drawn, &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, &mut state.methodical_states[player_idx], rng);
 
     match action {
         TurnAction::ReplaceCard { row, col } => {
@@ -365,7 +374,7 @@ fn check_and_apply_eliminations(
 
         // Reshape grid after diagonal elimination
         if is_diagonal {
-            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, rng);
+            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, config.deck.neg_min, config.deck.pos_max, rng);
             state.players[player_idx]
                 .grid
                 .reshape_after_diagonal(&elim.kind, direction);
@@ -373,6 +382,9 @@ fn check_and_apply_eliminations(
 
         // Clean up empty rows
         state.players[player_idx].grid.cleanup();
+
+        // Invalidate methodical targets after grid dimensions change
+        state.methodical_states[player_idx].as_mut().map(|s| s.invalidate_targets());
 
         // Check if player cleared all cards
         if state.players[player_idx].grid.remaining_card_count() == 0 {

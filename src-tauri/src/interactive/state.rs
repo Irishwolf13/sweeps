@@ -4,9 +4,9 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::card::{build_deck, Card};
-use crate::engine::config::{GameConfig, ScoringMode};
+use crate::engine::config::{AiArchetype, GameConfig, ScoringMode};
 use crate::engine::grid::{EliminationType, PlayerGrid, SlideDirection};
-use crate::engine::strategy::{self, DrawSource, TurnAction};
+use crate::engine::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
 // ── Serializable view types (sent to frontend) ──────────────────────────
 
@@ -100,6 +100,7 @@ pub struct InteractiveGame {
     action_log: Vec<String>,
     rng: StdRng,
     human_player: usize,
+    methodical_states: Vec<Option<MethodicalState>>,
 }
 
 impl InteractiveGame {
@@ -124,6 +125,7 @@ impl InteractiveGame {
             action_log: vec!["Game started! Round 1 begins.".to_string()],
             rng,
             human_player: 0,
+            methodical_states: vec![None; player_count],
         };
 
         game.start_round();
@@ -165,6 +167,12 @@ impl InteractiveGame {
         self.round_ended = false;
         self.trigger_player = None;
         self.final_turns_given = 0;
+        self.methodical_states = (0..player_count)
+            .map(|i| match self.config.players[i].archetype {
+                AiArchetype::Methodical => Some(MethodicalState::new()),
+                _ => None,
+            })
+            .collect();
 
         // Human always picks initial flips first
         self.pending = InternalPending::ChooseInitialFlips { remaining: 2 };
@@ -331,6 +339,7 @@ impl InteractiveGame {
             &self.players[player_idx].grid,
             self.config.deck.neg_min,
             self.config.deck.pos_max,
+            &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
 
@@ -358,6 +367,7 @@ impl InteractiveGame {
             &self.players[player_idx].grid,
             self.config.deck.neg_min,
             self.config.deck.pos_max,
+            &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
         match action {
@@ -551,6 +561,8 @@ impl InteractiveGame {
                     &player_config,
                     &self.players[player_idx].grid,
                     &elim.kind,
+                    self.config.deck.neg_min,
+                    self.config.deck.pos_max,
                     &mut self.rng,
                 );
                 let dir_name = match &direction {
@@ -562,6 +574,9 @@ impl InteractiveGame {
             }
 
             self.players[player_idx].grid.cleanup();
+
+            // Invalidate methodical targets after grid dimensions change
+            self.methodical_states[player_idx].as_mut().map(|s| s.invalidate_targets());
 
             if self.players[player_idx].grid.remaining_card_count() == 0 {
                 self.players[player_idx].cleared_all = true;

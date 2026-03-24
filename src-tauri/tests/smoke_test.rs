@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
-use number_sweep_sim::engine::config::{DeckConfig, FlipStrategy, GameConfig, PlayerConfig, ScoringMode};
+use number_sweep_sim::engine::config::{DeckConfig, GameConfig, PlayerConfig};
 use number_sweep_sim::engine::game::play_game;
 use number_sweep_sim::simulation::runner::run_simulation;
 use number_sweep_sim::history::{store, compare};
@@ -97,21 +97,8 @@ fn test_skilled_vs_unskilled() {
     let mut config = GameConfig::default();
     config.player_count = 2;
 
-    // Player 1: highly skilled
-    let skilled = PlayerConfig {
-        keep_threshold: 4,
-        line_awareness: 1.0,
-        opponent_awareness: 0.8,
-        flip_strategy: FlipStrategy::Random,
-    };
-
-    // Player 2: unskilled (random)
-    let unskilled = PlayerConfig {
-        keep_threshold: 2,
-        line_awareness: 0.0,
-        opponent_awareness: 0.0,
-        flip_strategy: FlipStrategy::Random,
-    };
+    let skilled = PlayerConfig::expert();
+    let unskilled = PlayerConfig::beginner();
 
     config.players = vec![skilled, unskilled];
     let mut rng = rand::thread_rng();
@@ -153,6 +140,27 @@ fn test_skilled_vs_unskilled() {
         num_games,
         skilled_win_pct
     );
+}
+
+#[test]
+fn test_improved_ai_turn_count() {
+    let config = GameConfig::default();
+    let mut rng = rand::thread_rng();
+    let num_games = 100u32;
+    let mut total_turns_per_round = 0.0f64;
+    let mut total_rounds = 0u32;
+
+    for _ in 0..num_games {
+        let result = play_game(&config, &mut rng);
+        for round in &result.round_results {
+            total_turns_per_round += round.turns as f64;
+            total_rounds += 1;
+        }
+    }
+
+    let avg = total_turns_per_round / total_rounds as f64;
+    println!("\nAvg turns per round: {:.1}", avg);
+    assert!(avg < 70.0, "Expected < 70 avg turns/round (no-regression check), got {:.1}", avg);
 }
 
 #[test]

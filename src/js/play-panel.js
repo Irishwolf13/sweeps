@@ -4,10 +4,10 @@ let playState = null;
 let selectionMode = null;  // null, 'replace', 'flip'
 
 const AI_PRESETS = {
-  beginner:     { keep_threshold: 2, line_awareness: 0.1, opponent_awareness: 0.0 },
-  intermediate: { keep_threshold: 3, line_awareness: 0.4, opponent_awareness: 0.2 },
-  advanced:     { keep_threshold: 4, line_awareness: 0.7, opponent_awareness: 0.5 },
-  expert:       { keep_threshold: 5, line_awareness: 0.95, opponent_awareness: 0.8 },
+  beginner:     { archetype: 'Opportunist', skill: 0.3 },
+  intermediate: { archetype: 'Methodical',  skill: 0.6 },
+  advanced:     { archetype: 'Opportunist', skill: 0.85 },
+  expert:       { archetype: 'Calculator',  skill: 1.0 },
 };
 
 async function startPlayGame() {
@@ -20,7 +20,7 @@ async function startPlayGame() {
 
   // Human player gets perfect config (unused by engine, human makes own choices)
   config.players = [
-    { keep_threshold: 5, line_awareness: 1.0, opponent_awareness: 0.5, flip_strategy: 'Random' },
+    { archetype: 'Opportunist', skill: 1.0, flip_strategy: 'Random' },
     { ...aiConfig, flip_strategy: 'Random' },
     { ...aiConfig, flip_strategy: 'Random' },
     { ...aiConfig, flip_strategy: 'Random' },
