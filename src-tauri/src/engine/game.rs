@@ -365,7 +365,7 @@ fn check_and_apply_eliminations(
 
         // Reshape grid after diagonal elimination
         if is_diagonal {
-            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, rng);
+            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, config.deck.neg_min, config.deck.pos_max, rng);
             state.players[player_idx]
                 .grid
                 .reshape_after_diagonal(&elim.kind, direction);

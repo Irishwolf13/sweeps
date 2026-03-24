@@ -551,6 +551,8 @@ impl InteractiveGame {
                     &player_config,
                     &self.players[player_idx].grid,
                     &elim.kind,
+                    self.config.deck.neg_min,
+                    self.config.deck.pos_max,
                     &mut self.rng,
                 );
                 let dir_name = match &direction {
