@@ -242,7 +242,7 @@ fn update_phase(
         Phase::Close => {
             // If no target is close anymore, go back to Build
             let any_close = state.target_lines.iter().any(|&idx| {
-                idx < lines.len() && lines[idx].0.face_down_count <= 1 && lines[idx].1 >= 70.0
+                idx < lines.len() && lines[idx].0.face_down_count == 1 && lines[idx].1 >= 70.0
             });
             if !any_close {
                 state.phase = Phase::Build;
