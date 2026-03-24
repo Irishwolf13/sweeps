@@ -1,2 +1,5 @@
 # Worktrees
 .worktrees/
+
+# Build artifacts
+src-tauri/target/
