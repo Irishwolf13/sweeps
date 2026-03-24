@@ -14,10 +14,10 @@ const ORIGINAL_QUANTITIES = {
 };
 
 const PLAYER_PRESETS = {
-  Beginner:     { keepThreshold: 2, lineAwareness: 10, opponentAwareness: 0,  flipStrategy: 'Random' },
-  Intermediate: { keepThreshold: 3, lineAwareness: 40, opponentAwareness: 20, flipStrategy: 'Random' },
-  Advanced:     { keepThreshold: 4, lineAwareness: 70, opponentAwareness: 50, flipStrategy: 'Random' },
-  Expert:       { keepThreshold: 5, lineAwareness: 95, opponentAwareness: 80, flipStrategy: 'Random' },
+  Beginner:     { archetype: 'Opportunist', skill: 30, flipStrategy: 'Random' },
+  Intermediate: { archetype: 'Methodical',  skill: 60, flipStrategy: 'Random' },
+  Advanced:     { archetype: 'Opportunist', skill: 85, flipStrategy: 'Random' },
+  Expert:       { archetype: 'Calculator',  skill: 100, flipStrategy: 'Random' },
 };
 
 // ── Card Quantity Table ───────────────────────────────────────────────────
@@ -106,26 +106,19 @@ function buildPlayerPanel(idx) {
         </select>
       </h3>
       <div class="config-group" style="margin-bottom:0.6rem">
-        <label>Keep Threshold</label>
-        <div style="display:flex;align-items:center;gap:0.5rem">
-          <input type="number" id="keep-thresh-${idx}" min="0" max="10" value="${p.keepThreshold}" style="width:60px" />
-          <span style="font-size:0.75rem;color:var(--text-dim)">Keep drawn cards with |value| &le; this</span>
-        </div>
+        <label>AI Archetype</label>
+        <select id="archetype-${idx}">
+          <option value="Opportunist" ${p.archetype === 'Opportunist' ? 'selected' : ''}>Opportunist</option>
+          <option value="Methodical" ${p.archetype === 'Methodical' ? 'selected' : ''}>Methodical</option>
+          <option value="Calculator" ${p.archetype === 'Calculator' ? 'selected' : ''}>Calculator</option>
+        </select>
       </div>
       <div class="slider-group">
-        <label>Line Awareness <span class="slider-value" id="line-aware-val-${idx}">${p.lineAwareness}%</span></label>
-        <input type="range" id="line-aware-${idx}" min="0" max="100" value="${p.lineAwareness}"
-               oninput="document.getElementById('line-aware-val-${idx}').textContent = this.value + '%'" />
+        <label>Skill <span class="slider-value" id="skill-val-${idx}">${p.skill}%</span></label>
+        <input type="range" id="skill-${idx}" min="0" max="100" value="${p.skill}"
+               oninput="document.getElementById('skill-val-${idx}').textContent = this.value + '%'" />
         <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-dim)">
-          <span>Ignores lines</span><span>Plans eliminations</span>
-        </div>
-      </div>
-      <div class="slider-group">
-        <label>Opponent Awareness <span class="slider-value" id="opp-aware-val-${idx}">${p.opponentAwareness}%</span></label>
-        <input type="range" id="opp-aware-${idx}" min="0" max="100" value="${p.opponentAwareness}"
-               oninput="document.getElementById('opp-aware-val-${idx}').textContent = this.value + '%'" />
-        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-dim)">
-          <span>Ignores others</span><span>Watches opponents</span>
+          <span>Random play</span><span>Perfect execution</span>
         </div>
       </div>
       <div class="config-group" style="margin-top:0.6rem">
@@ -144,30 +137,21 @@ function buildPlayerPanel(idx) {
 function applyPlayerPreset(idx, presetName) {
   const p = PLAYER_PRESETS[presetName];
   if (!p) return;
-
-  document.getElementById(`keep-thresh-${idx}`).value = p.keepThreshold;
-  document.getElementById(`line-aware-${idx}`).value = p.lineAwareness;
-  document.getElementById(`line-aware-val-${idx}`).textContent = p.lineAwareness + '%';
-  document.getElementById(`opp-aware-${idx}`).value = p.opponentAwareness;
-  document.getElementById(`opp-aware-val-${idx}`).textContent = p.opponentAwareness + '%';
+  document.getElementById(`archetype-${idx}`).value = p.archetype;
+  document.getElementById(`skill-${idx}`).value = p.skill;
+  document.getElementById(`skill-val-${idx}`).textContent = p.skill + '%';
   document.getElementById(`flip-strategy-${idx}`).value = p.flipStrategy;
 }
 
 function applyToAll() {
   const count = parseInt(document.getElementById('player-count').value);
-  const src = 0;
-
-  const keepThresh = document.getElementById(`keep-thresh-${src}`).value;
-  const lineAware = document.getElementById(`line-aware-${src}`).value;
-  const oppAware = document.getElementById(`opp-aware-${src}`).value;
-  const flipStrategy = document.getElementById(`flip-strategy-${src}`).value;
-
+  const archetype = document.getElementById('archetype-0').value;
+  const skill = document.getElementById('skill-0').value;
+  const flipStrategy = document.getElementById('flip-strategy-0').value;
   for (let i = 1; i < count; i++) {
-    document.getElementById(`keep-thresh-${i}`).value = keepThresh;
-    document.getElementById(`line-aware-${i}`).value = lineAware;
-    document.getElementById(`line-aware-val-${i}`).textContent = lineAware + '%';
-    document.getElementById(`opp-aware-${i}`).value = oppAware;
-    document.getElementById(`opp-aware-val-${i}`).textContent = oppAware + '%';
+    document.getElementById(`archetype-${i}`).value = archetype;
+    document.getElementById(`skill-${i}`).value = skill;
+    document.getElementById(`skill-val-${i}`).textContent = skill + '%';
     document.getElementById(`flip-strategy-${i}`).value = flipStrategy;
   }
 }
@@ -196,9 +180,8 @@ function buildConfigFromUI() {
   const players = [];
   for (let i = 0; i < playerCount; i++) {
     players.push({
-      keep_threshold: parseInt(document.getElementById(`keep-thresh-${i}`).value) || 3,
-      line_awareness: parseInt(document.getElementById(`line-aware-${i}`).value) / 100,
-      opponent_awareness: parseInt(document.getElementById(`opp-aware-${i}`).value) / 100,
+      archetype: document.getElementById(`archetype-${i}`).value,
+      skill: parseInt(document.getElementById(`skill-${i}`).value) / 100,
       flip_strategy: document.getElementById(`flip-strategy-${i}`).value,
     });
   }
