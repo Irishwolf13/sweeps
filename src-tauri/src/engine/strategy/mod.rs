@@ -1,4 +1,5 @@
 mod line_scoring;
+mod opportunist;
 
 use rand::Rng;
 
@@ -71,8 +72,11 @@ pub fn choose_draw_source(
     pos_max: i32,
     rng: &mut impl Rng,
 ) -> DrawSource {
-    // Temporary: random draw source
-    if rng.gen_bool(0.5) { DrawSource::DiscardPile } else { DrawSource::DrawPile }
+    match config.archetype {
+        AiArchetype::Opportunist => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
+        // Methodical and Calculator will be added in later tasks
+        _ => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
+    }
 }
 
 pub fn choose_action(
@@ -83,19 +87,10 @@ pub fn choose_action(
     pos_max: i32,
     rng: &mut impl Rng,
 ) -> TurnAction {
-    // Temporary: flip a random face-down card or replace first occupied
-    let face_down = grid.face_down_positions();
-    if !face_down.is_empty() {
-        let idx = rng.gen_range(0..face_down.len());
-        TurnAction::DiscardAndFlip { row: face_down[idx].0, col: face_down[idx].1 }
-    } else {
-        let occupied = grid.occupied_positions();
-        if !occupied.is_empty() {
-            let idx = rng.gen_range(0..occupied.len());
-            TurnAction::ReplaceCard { row: occupied[idx].0, col: occupied[idx].1 }
-        } else {
-            TurnAction::DiscardAndFlip { row: 0, col: 0 }
-        }
+    match config.archetype {
+        AiArchetype::Opportunist => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
+        // Methodical and Calculator will be added in later tasks
+        _ => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
     }
 }
 
