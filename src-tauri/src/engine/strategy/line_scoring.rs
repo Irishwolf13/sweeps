@@ -291,31 +291,53 @@ fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], neg_min: i32, p
 }
 
 fn score_line(status: &LineStatus) -> f64 {
-    if !status.gap_achievable { return 0.0; }
-
     let total = status.positions.len();
     if total == 0 { return 0.0; }
 
     match status.face_down_count {
         0 => {
-            // All face-up. If gap is achievable (with wilds), it's completable now.
-            100.0
+            // All face-up. Completable via sum-to-zero OR via all-matching.
+            if status.gap_achievable {
+                return 100.0;
+            }
+            // Not completable via sum-to-zero; check matching path.
+            // All face-up values must already be identical (matching_viable handles this).
+            if status.matching_viable && status.matching_value.is_some() {
+                return 100.0;
+            }
+            0.0
         }
         1 => {
             // One card away. Score 70-90 based on line length (shorter = easier).
             let base = 70.0;
             let length_bonus = if total <= 2 { 20.0 } else if total <= 3 { 15.0 } else { 10.0 };
-            // Matching bonus
-            let matching_bonus = if status.matching_viable { 5.0 } else { 0.0 };
+            // Matching bonus: viable via all-matching even when sum-to-zero is hopeless.
+            let matching_bonus = if status.matching_viable { 10.0 } else { 0.0 };
+
+            if !status.gap_achievable {
+                // Sum-to-zero is hopeless; only the matching path can save this line.
+                if status.matching_viable {
+                    return base + length_bonus + matching_bonus;
+                }
+                return 0.0;
+            }
             base + length_bonus + matching_bonus
         }
         2 => {
             // Two away. Score 30-60 based on gap range achievability.
+            if !status.gap_achievable && !status.matching_viable {
+                return 0.0;
+            }
             let base = 30.0;
             let progress = (total - 2) as f64 / total as f64;
-            base + progress * 30.0
+            // Small matching bonus for short lines where all-matching is realistic.
+            let matching_bonus = if status.matching_viable && total <= 3 { 10.0 } else { 0.0 };
+            base + progress * 30.0 + matching_bonus
         }
         _ => {
+            if !status.gap_achievable && !status.matching_viable {
+                return 0.0;
+            }
             // Three or more away. Low but nonzero if achievable.
             let progress = (total - status.face_down_count) as f64 / total as f64;
             5.0 + progress * 15.0
@@ -439,5 +461,25 @@ mod tests {
             matching_viable: false,
         };
         assert_eq!(score_line(&status), 0.0);
+    }
+
+    #[test]
+    fn test_matching_line_scores_high() {
+        // Row with 3 matching values + 1 face-down should score well
+        // even if sum-to-zero is hopeless
+        let status = LineStatus {
+            positions: vec![(0,0), (0,1), (0,2), (0,3)],
+            face_up_count: 3,
+            face_down_count: 1,
+            current_sum: 15,  // 5+5+5
+            wild_count: 0,
+            gap: -15,
+            gap_achievable: false,  // sum-to-zero is hopeless
+            cards_needed: 1,
+            matching_value: Some(5),
+            matching_viable: true,
+        };
+        let score = score_line(&status);
+        assert!(score >= 50.0, "Matching-viable line should score well, got {}", score);
     }
 }
