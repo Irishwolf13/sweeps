@@ -1,3 +1,4 @@
+mod calculator;
 mod line_scoring;
 mod methodical;
 mod opportunist;
@@ -80,7 +81,7 @@ pub fn choose_draw_source(
             let state = methodical_state.get_or_insert_with(MethodicalState::new);
             methodical::choose_draw_source(config, discard_top, grid, neg_min, pos_max, state, rng)
         }
-        AiArchetype::Calculator => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng), // stub until Task 5
+        AiArchetype::Calculator => calculator::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
     }
 }
 
@@ -99,7 +100,7 @@ pub fn choose_action(
             let state = methodical_state.get_or_insert_with(MethodicalState::new);
             methodical::choose_action(config, drawn_card, grid, neg_min, pos_max, state, rng)
         }
-        AiArchetype::Calculator => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng), // stub until Task 5
+        AiArchetype::Calculator => calculator::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
     }
 }
 
