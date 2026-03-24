@@ -166,10 +166,13 @@ function renderGrid(containerId, gridView, playerIdx) {
 }
 
 function canClickCell(r, c, cell) {
-  if (!playState || playState.current_player !== 0) return false;
+  if (!playState) return false;
   const p = playState.pending.action_type;
 
+  // Initial flips happen before turn order — always allow human to pick
   if (p === 'choose_initial_flips') return cell.state === 'face_down';
+
+  if (playState.current_player !== 0) return false;
   if (p === 'handle_normal_card') {
     if (selectionMode === 'replace') return cell.state !== 'empty';
     if (selectionMode === 'flip') return cell.state === 'face_down';
