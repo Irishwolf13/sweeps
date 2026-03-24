@@ -712,12 +712,7 @@ impl InteractiveGame {
         if idx == self.human_player {
             "You".to_string()
         } else {
-            match idx {
-                1 => "West (AI)".to_string(),
-                2 => "North (AI)".to_string(),
-                3 => "East (AI)".to_string(),
-                _ => format!("Player {}", idx + 1),
-            }
+            format!("Player {} (AI)", idx + 1)
         }
     }
 

@@ -45,6 +45,7 @@ pub struct SimulationSummary {
     // Deck health
     pub effective_deck_usage: f64,
     pub round_completion_rate: f64,
+    pub avg_draw_pile_remaining: f64,
 
     // Per-player breakdown
     pub player_summaries: Vec<PlayerSummary>,
@@ -255,6 +256,16 @@ pub fn aggregate(
         0.0
     };
 
+    let total_draw_remaining: f64 = results.iter()
+        .flat_map(|g| g.round_results.iter())
+        .map(|r| r.draw_pile_remaining as f64)
+        .sum();
+    let avg_draw_pile_remaining = if total_rounds > 0 {
+        total_draw_remaining / total_rounds_f
+    } else {
+        0.0
+    };
+
     // Per-player summaries
     let player_summaries: Vec<PlayerSummary> = (0..player_count)
         .map(|i| PlayerSummary {
@@ -323,6 +334,7 @@ pub fn aggregate(
         cleared_all_rate,
         effective_deck_usage,
         round_completion_rate,
+        avg_draw_pile_remaining,
         player_summaries,
         score_histograms,
     }

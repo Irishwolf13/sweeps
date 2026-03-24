@@ -35,17 +35,17 @@ impl DeckConfig {
 
 impl Default for DeckConfig {
     fn default() -> Self {
-        // Flattened curve: -5 to 8, gentle slope, negatives slightly rarer
+        // 4-player preset: 132 cards (120 number + 12 wild)
         let card_quantities = vec![
-            (-5, 4), (-4, 6), (-3, 7), (-2, 8), (-1, 9),
-            (0, 10),
-            (1, 9), (2, 9), (3, 9), (4, 8), (5, 7), (6, 6), (7, 5), (8, 4),
+            (-5, 5), (-4, 6), (-3, 8), (-2, 9), (-1, 11),
+            (0, 13),
+            (1, 11), (2, 11), (3, 10), (4, 9), (5, 8), (6, 7), (7, 6), (8, 6),
         ];
         DeckConfig {
             neg_min: -5,
             pos_max: 8,
             card_quantities,
-            wild_count: 8,
+            wild_count: 12,
         }
     }
 }
@@ -178,8 +178,8 @@ mod tests {
     #[test]
     fn test_default_deck_total() {
         let deck = DeckConfig::default();
-        // 101 number cards + 8 wild = 109
-        assert_eq!(deck.total_cards(), 109);
+        // 120 number cards + 12 wild = 132
+        assert_eq!(deck.total_cards(), 132);
     }
 
     #[test]

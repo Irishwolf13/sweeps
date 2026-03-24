@@ -10,21 +10,73 @@ const AI_PRESETS = {
   expert:       { archetype: 'Calculator',  skill: 1.0 },
 };
 
+function buildPlayAiPanels() {
+  const count = parseInt(document.getElementById('play-player-count').value);
+  const container = document.getElementById('play-ai-panels');
+  let html = '';
+  for (let i = 1; i < count; i++) {
+    html += `
+      <div class="play-ai-config" style="display:flex;align-items:center;gap:0.8rem;margin:0.5rem 0;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">
+        <strong style="min-width:5rem">Player ${i + 1}:</strong>
+        <select id="play-arch-${i}">
+          <option value="Opportunist">Opportunist</option>
+          <option value="Methodical">Methodical</option>
+          <option value="Calculator">Calculator</option>
+        </select>
+        <label style="font-size:0.8rem">Skill:</label>
+        <input type="range" id="play-skill-${i}" min="0" max="100" value="85" style="width:100px"
+               oninput="document.getElementById('play-skill-val-${i}').textContent=this.value+'%'" />
+        <span id="play-skill-val-${i}" style="font-size:0.8rem;min-width:2.5rem">85%</span>
+        <select id="play-flip-${i}" style="font-size:0.8rem">
+          <option value="Random">Random</option>
+          <option value="SameColumn">Same Col</option>
+          <option value="SameRow">Same Row</option>
+          <option value="Corners">Corners</option>
+          <option value="Diagonal">Diagonal</option>
+        </select>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function quickFillAi(preset) {
+  const count = parseInt(document.getElementById('play-player-count').value);
+  const presets = {
+    beginner: { archetype: 'Opportunist', skill: 30 },
+    expert: { archetype: 'Calculator', skill: 100 },
+  };
+  const mixedOrder = ['beginner', 'intermediate', 'advanced', 'expert'];
+  for (let i = 1; i < count; i++) {
+    let p;
+    if (preset === 'mixed') {
+      const key = mixedOrder[(i - 1) % mixedOrder.length];
+      p = AI_PRESETS[key];
+      p = { archetype: p.archetype, skill: Math.round(p.skill * 100) };
+    } else {
+      p = presets[preset];
+    }
+    document.getElementById(`play-arch-${i}`).value = p.archetype;
+    document.getElementById(`play-skill-${i}`).value = p.skill;
+    document.getElementById(`play-skill-val-${i}`).textContent = p.skill + '%';
+  }
+}
+
 async function startPlayGame() {
-  const preset = document.getElementById('play-ai-preset').value;
-  const aiConfig = AI_PRESETS[preset];
-
-  // Build a config using current deck settings from Configure tab
+  const playerCount = parseInt(document.getElementById('play-player-count').value);
   const config = buildConfigFromUI();
-  config.player_count = 4;
+  config.player_count = playerCount;
 
-  // Human player gets perfect config (unused by engine, human makes own choices)
-  config.players = [
-    { archetype: 'Opportunist', skill: 1.0, flip_strategy: 'Random' },
-    { ...aiConfig, flip_strategy: 'Random' },
-    { ...aiConfig, flip_strategy: 'Random' },
-    { ...aiConfig, flip_strategy: 'Random' },
-  ];
+  // Human player
+  const players = [{ archetype: 'Opportunist', skill: 1.0, flip_strategy: 'Random' }];
+  // AI players from per-AI config
+  for (let i = 1; i < playerCount; i++) {
+    players.push({
+      archetype: document.getElementById(`play-arch-${i}`).value,
+      skill: parseInt(document.getElementById(`play-skill-${i}`).value) / 100,
+      flip_strategy: document.getElementById(`play-flip-${i}`).value,
+    });
+  }
+  config.players = players;
 
   try {
     playState = await tauriStartPlayGame(config);
@@ -40,25 +92,39 @@ function renderPlayState() {
   if (!playState) return;
 
   renderScoreboard();
-  renderGrid('grid-south', playState.grids[0], 0);
-  renderGrid('grid-west', playState.grids[1], 1);
-  renderGrid('grid-north', playState.grids[2], 2);
-  renderGrid('grid-east', playState.grids[3], 3);
+
+  // Render human grid (always player 0)
+  renderGrid('grid-player-0', playState.grids[0], 0);
+
+  // Render AI grids dynamically
+  const aiContainer = document.getElementById('play-ai-grids');
+  const playerCount = playState.grids.length;
+  let html = '';
+  for (let i = 1; i < playerCount; i++) {
+    html += `
+      <div class="play-position play-ai">
+        <div class="play-player-label" id="label-player-${i}">${playState.player_names[i]}</div>
+        <div class="play-grid" id="grid-player-${i}"></div>
+      </div>`;
+  }
+  aiContainer.innerHTML = html;
+  for (let i = 1; i < playerCount; i++) {
+    renderGrid(`grid-player-${i}`, playState.grids[i], i);
+  }
+
   renderPiles();
   renderPrompt();
   renderLog();
-  renderPlayerLabels();
 }
 
 function renderScoreboard() {
   const sb = document.getElementById('play-scoreboard');
-  const names = ['You (South)', 'West (AI)', 'North (AI)', 'East (AI)'];
   const round = playState.round + 1;
 
   sb.innerHTML = `
-    <div class="scoreboard-round">Round ${round > 4 ? 4 : round} of 4 | Turn ${playState.turn}</div>
+    <div class="scoreboard-round">Round ${round > 4 ? 4 : round} of 4 | Turn ${playState.turn} | Draw pile: ${playState.draw_pile_count}</div>
     <div class="scoreboard-players">
-      ${names.map((name, i) => {
+      ${playState.player_names.map((name, i) => {
         const active = i === playState.current_player ? ' active-player' : '';
         return `<div class="scoreboard-player${active}">
           <span class="sb-name">${name}</span>
@@ -202,20 +268,6 @@ function renderLog() {
   log.scrollTop = log.scrollHeight;
 }
 
-function renderPlayerLabels() {
-  const names = playState.player_names;
-  document.getElementById('label-south').textContent = names[0];
-  document.getElementById('label-west').textContent = names[1];
-  document.getElementById('label-north').textContent = names[2];
-  document.getElementById('label-east').textContent = names[3];
-
-  // Highlight active player
-  ['south', 'west', 'north', 'east'].forEach((dir, i) => {
-    const label = document.getElementById(`label-${dir}`);
-    label.classList.toggle('active-label', i === playState.current_player);
-  });
-}
-
 // ── Click handlers ───────────────────────────────────────────────────────
 
 async function handleDrawClick(source) {
@@ -235,7 +287,7 @@ function setMode(mode) {
   document.getElementById('btn-replace').className = mode === 'replace' ? 'btn-primary mode-active' : 'btn-secondary';
   document.getElementById('btn-flip').className = mode === 'flip' ? 'btn-primary mode-active' : 'btn-secondary';
   // Re-render grid to update clickable states
-  renderGrid('grid-south', playState.grids[0], 0);
+  renderGrid('grid-player-0', playState.grids[0], 0);
 }
 
 async function handleCellClick(playerIdx, row, col) {
@@ -287,12 +339,17 @@ async function handleAiTurn() {
 }
 
 async function handleAllAiTurns() {
-  // Play all AI turns until it's the human's turn again
+  let guard = 0;
   while (playState && playState.pending.action_type === 'not_your_turn') {
     try {
       playState = await tauriPlayAiTurn();
     } catch (e) {
       console.error('AI turn failed:', e);
+      break;
+    }
+    guard++;
+    if (guard > 100) {
+      console.error('handleAllAiTurns: exceeded 100 iterations, breaking');
       break;
     }
   }
@@ -313,3 +370,10 @@ function resetPlayGame() {
   document.getElementById('play-setup').classList.remove('hidden');
   document.getElementById('play-board').classList.add('hidden');
 }
+
+// Build initial AI panels on page load
+document.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('play-ai-panels')) {
+    buildPlayAiPanels();
+  }
+});

@@ -51,8 +51,8 @@ mod tests {
     fn test_build_default_deck_count() {
         let config = DeckConfig::default();
         let deck = build_deck(&config);
-        // 101 number cards + 8 wild = 109
-        assert_eq!(deck.len(), 109);
+        // 120 number cards + 12 wild = 132 (4-player preset)
+        assert_eq!(deck.len(), 132);
     }
 
     #[test]
@@ -61,16 +61,16 @@ mod tests {
         let deck = build_deck(&config);
 
         let neg5_count = deck.iter().filter(|c| **c == Card::Number(-5)).count();
-        assert_eq!(neg5_count, 4);
+        assert_eq!(neg5_count, 5);
 
         let zero_count = deck.iter().filter(|c| **c == Card::Number(0)).count();
-        assert_eq!(zero_count, 10);
+        assert_eq!(zero_count, 13);
 
         let wild_count = deck.iter().filter(|c| **c == Card::Wild).count();
-        assert_eq!(wild_count, 8);
+        assert_eq!(wild_count, 12);
 
         let five_count = deck.iter().filter(|c| **c == Card::Number(5)).count();
-        assert_eq!(five_count, 7);
+        assert_eq!(five_count, 8);
     }
 
     #[test]
