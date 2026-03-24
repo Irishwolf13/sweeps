@@ -62,7 +62,11 @@ function updateTotalCards() {
 }
 
 function applyDeckPreset(preset) {
-  if (preset === 'default') {
+  if (preset === 'auto') {
+    const count = parseInt(document.getElementById('player-count').value);
+    applyDeckPresetForPlayers(count);
+    return;
+  } else if (preset === 'default') {
     document.getElementById('neg-min').value = -5;
     document.getElementById('pos-max').value = 8;
     document.getElementById('wild-count').value = 8;
@@ -223,6 +227,7 @@ function applyDeckPresetForPlayers(count) {
 
 document.getElementById('player-count').addEventListener('change', () => {
   const count = parseInt(document.getElementById('player-count').value);
+  document.getElementById('deck-preset').value = 'auto';
   applyDeckPresetForPlayers(count);
   buildPlayerPanels();
 });
