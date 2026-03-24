@@ -294,6 +294,92 @@ fn test_minimal_deck() {
 }
 
 #[test]
+fn test_two_player_with_preset_deck() {
+    let mut config = GameConfig::default();
+    config.player_count = 2;
+    config.players = vec![PlayerConfig::advanced(), PlayerConfig::expert()];
+    config.deck = DeckConfig {
+        neg_min: -5,
+        pos_max: 8,
+        card_quantities: vec![
+            (-5, 3), (-4, 4), (-3, 5), (-2, 6), (-1, 8),
+            (0, 10),
+            (1, 8), (2, 8), (3, 7), (4, 6), (5, 5), (6, 4), (7, 4), (8, 4),
+        ],
+        wild_count: 8,
+    };
+    assert!(config.deck.validate(config.player_count).is_ok());
+
+    let mut rng = rand::thread_rng();
+    for _ in 0..20 {
+        let result = play_game(&config, &mut rng);
+        assert_eq!(result.player_scores.len(), 2);
+        assert!(result.winner < 2);
+        assert_eq!(result.round_results.len(), 4);
+    }
+}
+
+#[test]
+fn test_six_player_games() {
+    let mut config = GameConfig::default();
+    config.player_count = 6;
+    config.players = vec![
+        PlayerConfig::beginner(),
+        PlayerConfig::intermediate(),
+        PlayerConfig::advanced(),
+        PlayerConfig::expert(),
+        PlayerConfig::beginner(),
+        PlayerConfig::intermediate(),
+    ];
+    // Use a 6-player deck
+    config.deck = DeckConfig {
+        neg_min: -5,
+        pos_max: 8,
+        card_quantities: vec![
+            (-5, 7), (-4, 9), (-3, 11), (-2, 13), (-1, 15),
+            (0, 17),
+            (1, 15), (2, 15), (3, 14), (4, 12), (5, 11), (6, 9), (7, 8), (8, 8),
+        ],
+        wild_count: 16,
+    };
+    assert!(config.deck.validate(config.player_count).is_ok());
+
+    let mut rng = rand::thread_rng();
+    for _ in 0..20 {
+        let result = play_game(&config, &mut rng);
+        assert_eq!(result.player_scores.len(), 6);
+        assert!(result.winner < 6);
+        assert_eq!(result.round_results.len(), 4);
+        // Verify draw pile remaining is set
+        for round in &result.round_results {
+            assert!(round.draw_pile_remaining > 0 || round.draw_pile_exhausted,
+                "Draw pile should have cards or be marked exhausted");
+        }
+    }
+}
+
+#[test]
+fn test_preset_decks_no_exhaustion() {
+    // Test that 4-player default deck doesn't exhaust over 100 games
+    let config = GameConfig::default();
+    let mut rng = rand::thread_rng();
+    let mut exhausted_count = 0u32;
+
+    for _ in 0..100 {
+        let result = play_game(&config, &mut rng);
+        for round in &result.round_results {
+            if round.draw_pile_exhausted {
+                exhausted_count += 1;
+            }
+        }
+    }
+
+    println!("Draw pile exhausted in {} of 400 rounds", exhausted_count);
+    // With the larger 132-card deck, exhaustion should be rare
+    assert!(exhausted_count < 20, "Deck exhausted too often: {} of 400 rounds", exhausted_count);
+}
+
+#[test]
 fn test_persistence_cycle() {
     // Run → Save → List → Get → Compare → Delete
     let config = GameConfig::default();
