@@ -153,6 +153,15 @@ function displayResults(summary) {
     height: 300,
   }) : '';
 
+  const cardsDistChart = summary.cards_remaining_histograms ? distributionChart({
+    labels: playerLabels,
+    histograms: summary.cards_remaining_histograms,
+    title: 'Cards Remaining Distribution (Per Round)',
+    xLabel: 'Cards Remaining',
+    width: 700,
+    height: 300,
+  }) : '';
+
   let html = `
     <h2 class="results-title">${summary.run_name} — ${summary.num_games.toLocaleString()} games</h2>
 
@@ -168,6 +177,7 @@ function displayResults(summary) {
       <div class="chart-container">${elimChart}</div>
       <div class="chart-container">${cardsChart}</div>
     </div>
+    ${cardsDistChart ? `<div class="chart-row"><div class="chart-container chart-wide">${cardsDistChart}</div></div>` : ''}
 
     <div class="stat-cards">
       <div class="stat-card">

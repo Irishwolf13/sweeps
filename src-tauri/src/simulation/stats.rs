@@ -53,6 +53,9 @@ pub struct SimulationSummary {
     // Score distribution: per-player histograms
     // Each entry is a Vec of (bucket_center, count) pairs
     pub score_histograms: Vec<Vec<(i32, u32)>>,
+
+    // Cards remaining distribution: per-player histograms across all rounds
+    pub cards_remaining_histograms: Vec<Vec<(i32, u32)>>,
 }
 
 /// Aggregate results from many game simulations into a summary.
@@ -70,6 +73,7 @@ pub fn aggregate(
     // ── Per-player accumulators ───────────────────────────────────────────
     let mut score_sums = vec![0i64; player_count];
     let mut score_lists: Vec<Vec<i32>> = vec![Vec::with_capacity(results.len()); player_count];
+    let mut remaining_lists: Vec<Vec<usize>> = vec![Vec::new(); player_count];
     let mut win_counts = vec![0u32; player_count];
     let mut elim_sums = vec![0u64; player_count];
     let mut remaining_sums = vec![0u64; player_count];
@@ -132,6 +136,7 @@ pub fn aggregate(
                 }
                 if i < round.cards_remaining_per_player.len() {
                     remaining_sums[i] += round.cards_remaining_per_player[i] as u64;
+                    remaining_lists[i].push(round.cards_remaining_per_player[i]);
                 }
                 if i < round.player_round_scores.len() {
                     total_score_all += round.player_round_scores[i] as i64;
@@ -312,6 +317,29 @@ pub fn aggregate(
         })
         .collect();
 
+    // Cards remaining histograms: bin each player's per-round remaining cards
+    let cards_remaining_histograms: Vec<Vec<(i32, u32)>> = (0..player_count)
+        .map(|i| {
+            let vals = &remaining_lists[i];
+            if vals.is_empty() {
+                return Vec::new();
+            }
+            let r_min = *vals.iter().min().unwrap() as i32;
+            let r_max = *vals.iter().max().unwrap() as i32;
+            // Cards remaining is typically 0-16, so use bin width of 1
+            let mut counts = vec![0u32; (r_max - r_min + 1) as usize];
+            for &v in vals {
+                let idx = (v as i32 - r_min) as usize;
+                if idx < counts.len() {
+                    counts[idx] += 1;
+                }
+            }
+            counts.iter().enumerate()
+                .map(|(idx, &count)| (r_min + idx as i32, count))
+                .collect()
+        })
+        .collect();
+
     SimulationSummary {
         id,
         run_name,
@@ -337,5 +365,6 @@ pub fn aggregate(
         avg_draw_pile_remaining,
         player_summaries,
         score_histograms,
+        cards_remaining_histograms,
     }
 }
