@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::card::{build_deck, Card};
-use crate::engine::config::{AiArchetype, GameConfig, ScoringMode};
+use crate::engine::config::{AiArchetype, GameConfig, GameMode, ScoringMode};
 use crate::engine::grid::{EliminationType, PlayerGrid, SlideDirection};
 use crate::engine::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
@@ -333,13 +333,13 @@ impl InteractiveGame {
         let player_config = &self.config.players[player_idx].clone();
 
         // 1. Choose draw source
+        let ctx = self.config.elimination_context();
         let discard_top = self.discard_pile.last().cloned();
         let source = strategy::choose_draw_source(
             player_config,
             discard_top.as_ref(),
             &self.players[player_idx].grid,
-            self.config.deck.neg_min,
-            self.config.deck.pos_max,
+            &ctx,
             &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
@@ -366,8 +366,7 @@ impl InteractiveGame {
             player_config,
             &drawn,
             &self.players[player_idx].grid,
-            self.config.deck.neg_min,
-            self.config.deck.pos_max,
+            &ctx,
             &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
@@ -454,11 +453,11 @@ impl InteractiveGame {
 
     fn check_eliminations_human(&mut self) {
         loop {
+            let ctx = self.config.elimination_context();
             let eliminations = self.players[self.human_player].grid.find_eliminations(
                 self.config.allow_matching_elimination,
                 self.config.allow_diagonal_elimination,
-                self.config.deck.neg_min,
-                self.config.deck.pos_max,
+                &ctx,
             );
 
             if eliminations.is_empty() {
@@ -477,6 +476,7 @@ impl InteractiveGame {
             let reason = match &elim.reason {
                 crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
                 crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
             };
             let kind_str = match &elim.kind {
                 EliminationType::Row(r) => format!("Row {}", r),
@@ -512,12 +512,12 @@ impl InteractiveGame {
 
     fn check_eliminations_ai(&mut self, player_idx: usize) {
         let player_name = self.player_name(player_idx);
+        let ctx = self.config.elimination_context();
         loop {
             let eliminations = self.players[player_idx].grid.find_eliminations(
                 self.config.allow_matching_elimination,
                 self.config.allow_diagonal_elimination,
-                self.config.deck.neg_min,
-                self.config.deck.pos_max,
+                &ctx,
             );
 
             if eliminations.is_empty() {
@@ -536,6 +536,7 @@ impl InteractiveGame {
             let reason = match &elim.reason {
                 crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
                 crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
             };
             let kind_str = match &elim.kind {
                 EliminationType::Row(r) => format!("Row {}", r),
@@ -551,7 +552,7 @@ impl InteractiveGame {
                 let next_grid = Some(&self.players[next_player].grid);
                 let discard_idx = strategy::choose_discard_with_opponent(
                     &player_config, &removed, next_grid,
-                    self.config.deck.neg_min, self.config.deck.pos_max, &mut self.rng,
+                    &ctx, &mut self.rng,
                 );
                 self.discard_pile.push(removed[discard_idx].clone());
             }
@@ -562,8 +563,7 @@ impl InteractiveGame {
                     &player_config,
                     &self.players[player_idx].grid,
                     &elim.kind,
-                    self.config.deck.neg_min,
-                    self.config.deck.pos_max,
+                    &ctx,
                     &mut self.rng,
                 );
                 let dir_name = match &direction {
@@ -595,7 +595,11 @@ impl InteractiveGame {
         let grid = &self.players[player_idx].grid;
         let remaining = grid.remaining_card_count();
 
-        if (remaining <= 4 && grid.all_face_up()) || remaining == 0 {
+        let triggered = match self.config.game_mode {
+            GameMode::Numbers => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+            GameMode::Shapes => remaining == 0,
+        };
+        if triggered {
             self.round_ended = true;
             self.trigger_player = Some(player_idx);
             self.players[player_idx].went_out_first = true;
@@ -669,22 +673,27 @@ impl InteractiveGame {
     }
 
     fn best_discard_idx(&self, cards: &[Card]) -> usize {
-        if cards.len() <= 1 {
-            return 0;
-        }
-        let mut best_idx = 0;
-        let mut best_score = i32::MIN;
-        for (i, card) in cards.iter().enumerate() {
-            let score = match card {
-                Card::Number(v) => v.abs(),
-                Card::Wild => -100,
-            };
-            if score > best_score {
-                best_score = score;
-                best_idx = i;
+        if cards.len() <= 1 { return 0; }
+        match self.config.game_mode {
+            GameMode::Numbers => {
+                let mut best_idx = 0;
+                let mut best_score = i32::MIN;
+                for (i, card) in cards.iter().enumerate() {
+                    let score = match card {
+                        Card::Number(v) => v.abs(),
+                        _ => -100,
+                    };
+                    if score > best_score { best_score = score; best_idx = i; }
+                }
+                best_idx
+            }
+            GameMode::Shapes => {
+                for (i, card) in cards.iter().enumerate() {
+                    if matches!(card, Card::Shape(_, _)) { return i; }
+                }
+                0
             }
         }
-        best_idx
     }
 
     fn score_round(&self) -> Vec<i32> {
@@ -703,7 +712,7 @@ impl InteractiveGame {
                             .sum::<i32>()
                     }
                 };
-                if p.went_out_first { score -= 2; }
+                if self.config.game_mode == GameMode::Numbers && p.went_out_first { score -= 2; }
                 score
             })
             .collect()
@@ -821,6 +830,9 @@ impl InteractiveGame {
                                 card_type: Some(match &gc.card {
                                     Card::Number(_) => "number".to_string(),
                                     Card::Wild => "wild".to_string(),
+                                    Card::WildShaded => "wild_shaded".to_string(),
+                                    Card::WildUnshaded => "wild_unshaded".to_string(),
+                                    Card::Shape(_, _) => "shape".to_string(),
                                 }),
                             });
                         } else {
@@ -864,6 +876,9 @@ fn card_to_view(card: &Card) -> CardView {
         card_type: match card {
             Card::Number(_) => "number".to_string(),
             Card::Wild => "wild".to_string(),
+            Card::WildShaded => "wild_shaded".to_string(),
+            Card::WildUnshaded => "wild_unshaded".to_string(),
+            Card::Shape(_, _) => "shape".to_string(),
         },
     }
 }

@@ -6,7 +6,7 @@ mod opportunist;
 use rand::Rng;
 
 use super::card::Card;
-use super::config::{AiArchetype, PlayerConfig};
+use super::config::{AiArchetype, EliminationContext, GameMode, PlayerConfig};
 use super::grid::{EliminationType, PlayerGrid, SlideDirection};
 
 pub use line_scoring::{LineStatus, score_all_lines, card_fits_line, best_placement, best_flip_target, needed_cards};
@@ -73,18 +73,17 @@ pub fn choose_draw_source(
     config: &PlayerConfig,
     discard_top: Option<&Card>,
     grid: &PlayerGrid,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     methodical_state: &mut Option<MethodicalState>,
     rng: &mut impl Rng,
 ) -> DrawSource {
     match config.archetype {
-        AiArchetype::Opportunist => opportunist::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
+        AiArchetype::Opportunist => opportunist::choose_draw_source(config, discard_top, grid, ctx, rng),
         AiArchetype::Methodical => {
             let state = methodical_state.get_or_insert_with(MethodicalState::new);
-            methodical::choose_draw_source(config, discard_top, grid, neg_min, pos_max, state, rng)
+            methodical::choose_draw_source(config, discard_top, grid, ctx, state, rng)
         }
-        AiArchetype::Calculator => calculator::choose_draw_source(config, discard_top, grid, neg_min, pos_max, rng),
+        AiArchetype::Calculator => calculator::choose_draw_source(config, discard_top, grid, ctx, rng),
     }
 }
 
@@ -92,55 +91,65 @@ pub fn choose_action(
     config: &PlayerConfig,
     drawn_card: &Card,
     grid: &PlayerGrid,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     methodical_state: &mut Option<MethodicalState>,
     rng: &mut impl Rng,
 ) -> TurnAction {
     match config.archetype {
-        AiArchetype::Opportunist => opportunist::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
+        AiArchetype::Opportunist => opportunist::choose_action(config, drawn_card, grid, ctx, rng),
         AiArchetype::Methodical => {
             let state = methodical_state.get_or_insert_with(MethodicalState::new);
-            methodical::choose_action(config, drawn_card, grid, neg_min, pos_max, state, rng)
+            methodical::choose_action(config, drawn_card, grid, ctx, state, rng)
         }
-        AiArchetype::Calculator => calculator::choose_action(config, drawn_card, grid, neg_min, pos_max, rng),
+        AiArchetype::Calculator => calculator::choose_action(config, drawn_card, grid, ctx, rng),
     }
 }
 
 pub fn choose_discard_from_eliminated(
     config: &PlayerConfig,
     eliminated_cards: &[Card],
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> usize {
     if eliminated_cards.len() <= 1 { return 0; }
     if !should_play_smart(config.skill, rng) {
         return rng.gen_range(0..eliminated_cards.len());
     }
-    // Discard highest absolute value, never Wild
-    let mut best_idx = 0;
-    let mut best_score = i32::MIN;
-    for (i, card) in eliminated_cards.iter().enumerate() {
-        let score = match card {
-            Card::Number(v) => v.abs(),
-            Card::Wild => -100,
-        };
-        if score > best_score {
-            best_score = score;
-            best_idx = i;
+    match ctx.game_mode {
+        GameMode::Numbers => {
+            // Discard highest absolute value, never Wild
+            let mut best_idx = 0;
+            let mut best_score = i32::MIN;
+            for (i, card) in eliminated_cards.iter().enumerate() {
+                let score = match card {
+                    Card::Number(v) => v.abs(),
+                    _ => -100,
+                };
+                if score > best_score {
+                    best_score = score;
+                    best_idx = i;
+                }
+            }
+            best_idx
+        }
+        GameMode::Shapes => {
+            // Prefer discarding a plain shape card (not wild)
+            for (i, card) in eliminated_cards.iter().enumerate() {
+                if matches!(card, Card::Shape(_, _)) { return i; }
+            }
+            0
         }
     }
-    best_idx
 }
 
 pub fn choose_discard_with_opponent(
     config: &PlayerConfig,
     eliminated_cards: &[Card],
     next_player_grid: Option<&PlayerGrid>,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> usize {
-    let base_idx = choose_discard_from_eliminated(config, eliminated_cards, rng);
+    let base_idx = choose_discard_from_eliminated(config, eliminated_cards, ctx, rng);
 
     // Opponent awareness kicks in at skill >= 0.5
     if config.skill < 0.5 || !should_play_smart(config.skill, rng) {
@@ -152,15 +161,15 @@ pub fn choose_discard_with_opponent(
         None => return base_idx,
     };
 
-    let chosen_value = match &eliminated_cards[base_idx] {
-        Card::Number(v) => *v,
-        Card::Wild => return base_idx,
-    };
+    let chosen_card = &eliminated_cards[base_idx];
+    if matches!(chosen_card, Card::Wild | Card::WildShaded | Card::WildUnshaded) {
+        return base_idx;
+    }
 
     // Check if our chosen discard helps the opponent
-    let next_lines = score_all_lines(next_grid, neg_min, pos_max);
+    let next_lines = score_all_lines(next_grid, ctx);
     let helps_opponent = next_lines.iter().any(|(line, _score)| {
-        card_fits_line(chosen_value, line, neg_min, pos_max) >= 80.0
+        card_fits_line(chosen_card, line, ctx) >= 80.0
     });
 
     if !helps_opponent {
@@ -172,12 +181,13 @@ pub fn choose_discard_with_opponent(
     let mut best_alt_abs = i32::MIN;
     for (i, card) in eliminated_cards.iter().enumerate() {
         if i == base_idx { continue; }
+        if matches!(card, Card::Wild | Card::WildShaded | Card::WildUnshaded) { continue; }
         let val = match card {
             Card::Number(v) => *v,
-            Card::Wild => continue,
+            _ => continue,
         };
         let max_help = next_lines.iter()
-            .map(|(line, _)| card_fits_line(val, line, neg_min, pos_max))
+            .map(|(line, _)| card_fits_line(card, line, ctx))
             .fold(0.0f64, f64::max);
         if max_help < 60.0 && val.abs() > best_alt_abs {
             best_alt_abs = val.abs();
@@ -192,8 +202,7 @@ pub fn choose_slide_direction(
     config: &PlayerConfig,
     grid: &PlayerGrid,
     eliminated_kind: &EliminationType,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> SlideDirection {
     if !should_play_smart(config.skill, rng) {
@@ -203,13 +212,13 @@ pub fn choose_slide_direction(
     let mut grid_h = grid.clone();
     grid_h.reshape_after_diagonal(eliminated_kind, SlideDirection::Horizontal);
     grid_h.cleanup();
-    let score_h: f64 = score_all_lines(&grid_h, neg_min, pos_max)
+    let score_h: f64 = score_all_lines(&grid_h, ctx)
         .iter().map(|(_, s)| s).sum();
 
     let mut grid_v = grid.clone();
     grid_v.reshape_after_diagonal(eliminated_kind, SlideDirection::Vertical);
     grid_v.cleanup();
-    let score_v: f64 = score_all_lines(&grid_v, neg_min, pos_max)
+    let score_v: f64 = score_all_lines(&grid_v, ctx)
         .iter().map(|(_, s)| s).sum();
 
     if score_h >= score_v { SlideDirection::Horizontal } else { SlideDirection::Vertical }

@@ -228,28 +228,26 @@ function displayResults(summary) {
 // ── Validation ────────────────────────────────────────────────────────────
 
 function validateConfig(config) {
-  if (config.deck.neg_min > 0) {
-    return 'Negative range minimum must be <= 0';
-  }
-  if (config.deck.pos_max < 0) {
-    return 'Positive range maximum must be >= 0';
-  }
-  if (config.deck.neg_min > config.deck.pos_max) {
-    return 'Negative min must be less than positive max';
+  if (config.game_mode === 'Numbers') {
+    if (config.deck.neg_min > 0) return 'Negative range minimum must be <= 0';
+    if (config.deck.pos_max < 0) return 'Positive range maximum must be >= 0';
+    if (config.deck.neg_min > config.deck.pos_max) return 'Negative min must be less than positive max';
   }
 
-  const totalCards = config.deck.card_quantities.reduce((sum, [_, count]) => sum + count, 0)
-    + config.deck.wild_count;
+  let totalCards;
+  if (config.deck.type === 'Numbers') {
+    totalCards = config.deck.card_quantities.reduce((sum, [_, count]) => sum + count, 0) + config.deck.wild_count;
+  } else {
+    totalCards = config.deck.shape_quantities.reduce((sum, [_, __, count]) => sum + count, 0)
+      + config.deck.wild_count + (config.deck.wild_shaded_count || 0) + (config.deck.wild_unshaded_count || 0);
+  }
+
   const needed = config.player_count * 16 + 20;
-
   if (totalCards < needed) {
-    return `Deck has ${totalCards} cards but ${config.player_count} players need at least ${needed} (${config.player_count}x16 + 20 for draw pile)`;
+    return `Deck has ${totalCards} cards but ${config.player_count} players need at least ${needed}`;
   }
 
-  if (config.players.length !== config.player_count) {
-    return 'Player config count mismatch';
-  }
-
+  if (config.players.length !== config.player_count) return 'Player config count mismatch';
   return null;
 }
 

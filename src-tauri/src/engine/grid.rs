@@ -1,8 +1,8 @@
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use super::card::Card;
-use super::config::FlipStrategy;
+use super::card::{Card, Shape, Shade};
+use super::config::{EliminationContext, FlipStrategy, GameMode};
 
 #[derive(Clone, Debug)]
 pub struct GridCell {
@@ -30,6 +30,7 @@ pub enum EliminationType {
 pub enum EliminationReason {
     SumToZero,
     AllMatching,
+    Cancellation,
 }
 
 #[derive(Clone, Debug)]
@@ -247,8 +248,7 @@ impl PlayerGrid {
         &self,
         allow_matching: bool,
         allow_diagonal: bool,
-        neg_min: i32,
-        pos_max: i32,
+        ctx: &EliminationContext,
     ) -> Vec<Elimination> {
         let mut eliminations = Vec::new();
 
@@ -262,7 +262,7 @@ impl PlayerGrid {
             let cards = self.collect_line_cards(&positions);
             if let Some(cards) = cards {
                 if let Some(reason) =
-                    check_elimination(&cards, allow_matching, neg_min, pos_max)
+                    check_elimination(&cards, allow_matching, ctx)
                 {
                     eliminations.push(Elimination {
                         kind: EliminationType::Row(r),
@@ -288,7 +288,7 @@ impl PlayerGrid {
             let cards = self.collect_line_cards(&positions);
             if let Some(cards) = cards {
                 if let Some(reason) =
-                    check_elimination(&cards, allow_matching, neg_min, pos_max)
+                    check_elimination(&cards, allow_matching, ctx)
                 {
                     eliminations.push(Elimination {
                         kind: EliminationType::Column(c),
@@ -308,7 +308,7 @@ impl PlayerGrid {
                 let cards = self.collect_line_cards(&positions);
                 if let Some(cards) = cards {
                     if let Some(reason) =
-                        check_elimination(&cards, allow_matching, neg_min, pos_max)
+                        check_elimination(&cards, allow_matching, ctx)
                     {
                         eliminations.push(Elimination {
                             kind: EliminationType::MainDiagonal,
@@ -324,7 +324,7 @@ impl PlayerGrid {
                 let cards = self.collect_line_cards(&positions);
                 if let Some(cards) = cards {
                     if let Some(reason) =
-                        check_elimination(&cards, allow_matching, neg_min, pos_max)
+                        check_elimination(&cards, allow_matching, ctx)
                     {
                         eliminations.push(Elimination {
                             kind: EliminationType::AntiDiagonal,
@@ -449,23 +449,30 @@ impl PlayerGrid {
 fn check_elimination(
     cards: &[&Card],
     allow_matching: bool,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
 ) -> Option<EliminationReason> {
     if cards.is_empty() {
         return None;
     }
 
-    // Check sum-to-zero
-    if check_sum_to_zero(cards, neg_min, pos_max) {
-        return Some(EliminationReason::SumToZero);
+    match ctx.game_mode {
+        GameMode::Numbers => {
+            if check_sum_to_zero(cards, ctx.neg_min, ctx.pos_max) {
+                return Some(EliminationReason::SumToZero);
+            }
+            if allow_matching && check_all_matching(cards) {
+                return Some(EliminationReason::AllMatching);
+            }
+        }
+        GameMode::Shapes => {
+            if allow_matching && check_shape_matching(cards, ctx.shade_matters) {
+                return Some(EliminationReason::AllMatching);
+            }
+            if ctx.allow_cancellation && check_shape_cancellation(cards) {
+                return Some(EliminationReason::Cancellation);
+            }
+        }
     }
-
-    // Check all-matching
-    if allow_matching && check_all_matching(cards) {
-        return Some(EliminationReason::AllMatching);
-    }
-
     None
 }
 
@@ -477,7 +484,8 @@ fn check_sum_to_zero(cards: &[&Card], neg_min: i32, pos_max: i32) -> bool {
     for card in cards {
         match card {
             Card::Number(v) => number_sum += v,
-            Card::Wild => wild_count += 1,
+            Card::Wild | Card::WildShaded | Card::WildUnshaded => wild_count += 1,
+            Card::Shape(_, _) => { /* shouldn't happen in Numbers mode; treat as 0 */ }
         }
     }
 
@@ -499,7 +507,7 @@ fn check_all_matching(cards: &[&Card]) -> bool {
     let mut target_value: Option<&Card> = None;
 
     for &card in cards {
-        if matches!(card, Card::Wild) {
+        if matches!(card, Card::Wild | Card::WildShaded | Card::WildUnshaded) {
             continue;
         }
         match target_value {
@@ -512,10 +520,116 @@ fn check_all_matching(cards: &[&Card]) -> bool {
     true
 }
 
+/// Check if all cards are the same shape (and same shade if shade_matters).
+/// Wild matches anything. WildShaded matches any shaded card (when shade_matters).
+/// WildUnshaded matches any unshaded card (when shade_matters).
+fn check_shape_matching(cards: &[&Card], shade_matters: bool) -> bool {
+    let mut target_shape: Option<&Shape> = None;
+    let mut target_shade: Option<&Shade> = None;
+
+    for &card in cards {
+        match card {
+            Card::Wild => continue,
+            Card::WildShaded => {
+                if shade_matters {
+                    match target_shade {
+                        Some(Shade::Unshaded) => return false,
+                        None => target_shade = Some(&Shade::Shaded),
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            Card::WildUnshaded => {
+                if shade_matters {
+                    match target_shade {
+                        Some(Shade::Shaded) => return false,
+                        None => target_shade = Some(&Shade::Unshaded),
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+            Card::Shape(shape, shade) => {
+                match target_shape {
+                    Some(existing) if existing != shape => return false,
+                    None => target_shape = Some(shape),
+                    _ => {}
+                }
+                if shade_matters {
+                    match target_shade {
+                        Some(existing) if existing != shade => return false,
+                        None => target_shade = Some(shade),
+                        _ => {}
+                    }
+                }
+            }
+            Card::Number(_) => return false,
+        }
+    }
+    true
+}
+
+/// Check if shaded + unshaded pairs of the same shape cancel out.
+/// Line must be even length. Wild fills any gap. WildShaded fills shaded gaps.
+/// WildUnshaded fills unshaded gaps.
+fn check_shape_cancellation(cards: &[&Card]) -> bool {
+    if cards.len() % 2 != 0 { return false; }
+
+    use std::collections::HashMap;
+    let mut shaded_counts: HashMap<&Shape, i32> = HashMap::new();
+    let mut unshaded_counts: HashMap<&Shape, i32> = HashMap::new();
+    let mut wild_count = 0i32;
+    let mut wild_shaded_count = 0i32;
+    let mut wild_unshaded_count = 0i32;
+
+    for &card in cards {
+        match card {
+            Card::Shape(shape, Shade::Shaded) => *shaded_counts.entry(shape).or_insert(0) += 1,
+            Card::Shape(shape, Shade::Unshaded) => *unshaded_counts.entry(shape).or_insert(0) += 1,
+            Card::Wild => wild_count += 1,
+            Card::WildShaded => wild_shaded_count += 1,
+            Card::WildUnshaded => wild_unshaded_count += 1,
+            Card::Number(_) => return false,
+        }
+    }
+
+    let all_shapes: std::collections::HashSet<&&Shape> =
+        shaded_counts.keys().chain(unshaded_counts.keys()).collect();
+
+    let mut total_shaded_deficit = 0i32;
+    let mut total_unshaded_deficit = 0i32;
+
+    for shape in all_shapes {
+        let shaded = shaded_counts.get(*shape).copied().unwrap_or(0);
+        let unshaded = unshaded_counts.get(*shape).copied().unwrap_or(0);
+        if shaded > unshaded {
+            total_unshaded_deficit += shaded - unshaded;
+        } else {
+            total_shaded_deficit += unshaded - shaded;
+        }
+    }
+
+    let shaded_after = (total_shaded_deficit - wild_shaded_count).max(0);
+    let unshaded_after = (total_unshaded_deficit - wild_unshaded_count).max(0);
+    let remaining_deficit = shaded_after + unshaded_after;
+    remaining_deficit <= wild_count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use super::super::config::FlipStrategy;
+
+    fn numbers_ctx(neg_min: i32, pos_max: i32) -> EliminationContext {
+        EliminationContext {
+            game_mode: GameMode::Numbers,
+            neg_min,
+            pos_max,
+            shade_matters: false,
+            allow_cancellation: false,
+        }
+    }
 
     fn make_grid_from_numbers(values: &[i32]) -> PlayerGrid {
         assert_eq!(values.len(), 16);
@@ -538,7 +652,7 @@ mod tests {
     fn test_row_sum_to_zero() {
         // Row 0: -3 + 1 + 2 + 0 = 0
         let grid = make_grid_from_numbers(&[-3, 1, 2, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2]);
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         assert!(!elims.is_empty());
         assert_eq!(elims[0].kind, EliminationType::Row(0));
         assert_eq!(elims[0].reason, EliminationReason::SumToZero);
@@ -548,7 +662,7 @@ mod tests {
     fn test_column_sum_to_zero() {
         // Col 0: 1 + (-1) + 2 + (-2) = 0
         let grid = make_grid_from_numbers(&[1, 9, 9, 9, -1, 9, 9, 9, 2, 9, 9, 9, -2, 9, 9, 9]);
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         assert!(!elims.is_empty());
         assert_eq!(elims[0].kind, EliminationType::Column(0));
         assert_eq!(elims[0].reason, EliminationReason::SumToZero);
@@ -558,7 +672,7 @@ mod tests {
     fn test_all_matching_row() {
         // Row 0: all 5s
         let grid = make_grid_from_numbers(&[5, 5, 5, 5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2]);
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         assert!(!elims.is_empty());
         let matching_elim = elims
             .iter()
@@ -570,7 +684,7 @@ mod tests {
     fn test_matching_disabled() {
         // Row 0: all 5s, but matching is disabled
         let grid = make_grid_from_numbers(&[5, 5, 5, 5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1, 2]);
-        let elims = grid.find_eliminations(false, false, -5, 10);
+        let elims = grid.find_eliminations(false, false, &numbers_ctx(-5, 10));
         // Should not find the matching elimination (5+5+5+5=20, not 0)
         let matching_elim = elims
             .iter()
@@ -586,7 +700,7 @@ mod tests {
         if let Some(cell) = grid.cells[0][1].as_mut() {
             cell.face_up = false;
         }
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         let row0 = elims.iter().find(|e| e.kind == EliminationType::Row(0));
         assert!(row0.is_none());
     }
@@ -600,7 +714,7 @@ mod tests {
             card: Card::Wild,
             face_up: true,
         });
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         let row0 = elims.iter().find(|e| e.kind == EliminationType::Row(0));
         assert!(row0.is_some());
         assert_eq!(row0.unwrap().reason, EliminationReason::SumToZero);
@@ -615,7 +729,7 @@ mod tests {
             card: Card::Wild,
             face_up: true,
         });
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         let matching = elims
             .iter()
             .find(|e| e.reason == EliminationReason::AllMatching && e.kind == EliminationType::Row(0));
@@ -643,14 +757,14 @@ mod tests {
     fn test_diagonal_check_only_on_square() {
         // Diagonal: 1 + (-1) + 0 + 0 = 0
         let grid = make_grid_from_numbers(&[1, 9, 9, 9, 9, -1, 9, 9, 9, 9, 0, 9, 9, 9, 9, 0]);
-        let elims = grid.find_eliminations(true, true, -5, 10);
+        let elims = grid.find_eliminations(true, true, &numbers_ctx(-5, 10));
         let diag = elims
             .iter()
             .find(|e| matches!(e.kind, EliminationType::MainDiagonal));
         assert!(diag.is_some());
 
         // Disable diagonals
-        let elims = grid.find_eliminations(true, false, -5, 10);
+        let elims = grid.find_eliminations(true, false, &numbers_ctx(-5, 10));
         let diag = elims
             .iter()
             .find(|e| matches!(e.kind, EliminationType::MainDiagonal));
@@ -731,5 +845,83 @@ mod tests {
                 assert!(!cell.face_up, "Cell ({},{}) should be face-down", r, c);
             }
         }
+    }
+
+    #[test]
+    fn test_shape_matching_same_shade() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Shaded),
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Shaded),
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(check_shape_matching(&refs, true));
+        assert!(check_shape_matching(&refs, false));
+    }
+
+    #[test]
+    fn test_shape_matching_shade_ignored() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Unshaded),
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Unshaded),
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(!check_shape_matching(&refs, true));
+        assert!(check_shape_matching(&refs, false));
+    }
+
+    #[test]
+    fn test_shape_matching_with_wild() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Triangle, Sh::Shaded), Card::Wild,
+            Card::Shape(S::Triangle, Sh::Shaded), Card::WildShaded,
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(check_shape_matching(&refs, true));
+    }
+
+    #[test]
+    fn test_shape_cancellation_basic() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Unshaded),
+            Card::Shape(S::Triangle, Sh::Shaded), Card::Shape(S::Triangle, Sh::Unshaded),
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(check_shape_cancellation(&refs));
+    }
+
+    #[test]
+    fn test_shape_cancellation_unbalanced() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Shaded),
+            Card::Shape(S::Triangle, Sh::Shaded), Card::Shape(S::Triangle, Sh::Unshaded),
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(!check_shape_cancellation(&refs));
+    }
+
+    #[test]
+    fn test_shape_cancellation_with_wild() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Wild,
+            Card::Shape(S::Square, Sh::Shaded), Card::Shape(S::Square, Sh::Unshaded),
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(check_shape_cancellation(&refs));
+    }
+
+    #[test]
+    fn test_shape_cancellation_odd_length_fails() {
+        use super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Unshaded), Card::Wild,
+        ];
+        let refs: Vec<&Card> = cards.iter().collect();
+        assert!(!check_shape_cancellation(&refs));
     }
 }

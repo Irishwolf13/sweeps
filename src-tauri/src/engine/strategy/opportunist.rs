@@ -3,7 +3,7 @@ use rand::Rng;
 use super::line_scoring::{score_all_lines, card_fits_line, best_placement, best_flip_target};
 use super::{DrawSource, TurnAction, should_play_smart};
 use super::super::card::Card;
-use super::super::config::PlayerConfig;
+use super::super::config::{EliminationContext, GameMode, PlayerConfig};
 use super::super::grid::PlayerGrid;
 
 /// Opportunist: Line-first reactive play. No memory between turns.
@@ -11,8 +11,7 @@ pub fn choose_draw_source(
     config: &PlayerConfig,
     discard_top: Option<&Card>,
     grid: &PlayerGrid,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> DrawSource {
     let card = match discard_top {
@@ -26,16 +25,15 @@ pub fn choose_draw_source(
     }
 
     // Always take a Wild
-    if matches!(card, Card::Wild) {
+    if matches!(card, Card::Wild | Card::WildShaded | Card::WildUnshaded) {
         return DrawSource::DiscardPile;
     }
 
-    let card_value = match card { Card::Number(v) => *v, Card::Wild => 0 };
-    let lines = score_all_lines(grid, neg_min, pos_max);
+    let lines = score_all_lines(grid, ctx);
 
     // Check if discard completes ANY line
     for (line, _score) in &lines {
-        if card_fits_line(card_value, line, neg_min, pos_max) >= 100.0 {
+        if card_fits_line(card, line, ctx) >= 100.0 {
             return DrawSource::DiscardPile;
         }
     }
@@ -43,14 +41,17 @@ pub fn choose_draw_source(
     // Check if discard significantly helps the hottest line
     let hottest = lines.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
     if let Some((hot_line, _)) = hottest {
-        if card_fits_line(card_value, hot_line, neg_min, pos_max) >= 50.0 {
+        if card_fits_line(card, hot_line, ctx) >= 50.0 {
             return DrawSource::DiscardPile;
         }
     }
 
-    // Always take a 0 (universally useful for sum-to-zero)
-    if card_value == 0 {
-        return DrawSource::DiscardPile;
+    // Always take a 0 (universally useful for sum-to-zero, Numbers only)
+    if ctx.game_mode == GameMode::Numbers {
+        let card_value = match card { Card::Number(v) => *v, _ => return DrawSource::DrawPile };
+        if card_value == 0 {
+            return DrawSource::DiscardPile;
+        }
     }
 
     DrawSource::DrawPile
@@ -60,19 +61,18 @@ pub fn choose_action(
     config: &PlayerConfig,
     drawn_card: &Card,
     grid: &PlayerGrid,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> TurnAction {
     let face_down = grid.face_down_positions();
 
     // Skill check: fall back to simple heuristic
     if !should_play_smart(config.skill, rng) {
-        return fallback_action(drawn_card, grid, rng);
+        return fallback_action(drawn_card, grid, ctx, rng);
     }
 
     // Compute best placement
-    let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
+    let (pos, score) = best_placement(drawn_card, grid, ctx);
 
     // If placement score is meaningful, place it
     if score >= 30.0 {
@@ -81,7 +81,7 @@ pub fn choose_action(
 
     // Otherwise: discard and flip the most useful face-down card
     if !face_down.is_empty() {
-        let lines = score_all_lines(grid, neg_min, pos_max);
+        let lines = score_all_lines(grid, ctx);
         let flip_target = best_flip_target(&face_down, &lines);
         return TurnAction::DiscardAndFlip { row: flip_target.0, col: flip_target.1 };
     }
@@ -91,9 +91,21 @@ pub fn choose_action(
 }
 
 /// Fallback when skill check fails. pub(super) so Methodical can reference it later.
-pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, rng: &mut impl Rng) -> TurnAction {
-    let card_abs = match drawn_card { Card::Number(v) => v.abs(), Card::Wild => 0 };
+pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, ctx: &EliminationContext, rng: &mut impl Rng) -> TurnAction {
     let face_down = grid.face_down_positions();
+
+    if ctx.game_mode == GameMode::Shapes {
+        if !face_down.is_empty() {
+            let idx = rng.gen_range(0..face_down.len());
+            return TurnAction::ReplaceCard { row: face_down[idx].0, col: face_down[idx].1 };
+        }
+        let occupied = grid.occupied_positions();
+        let idx = rng.gen_range(0..occupied.len());
+        return TurnAction::ReplaceCard { row: occupied[idx].0, col: occupied[idx].1 };
+    }
+
+    // Numbers mode fallback
+    let card_abs = match drawn_card { Card::Number(v) => v.abs(), _ => 0 };
 
     if card_abs <= 3 && !face_down.is_empty() {
         // Low card: replace a random face-down
@@ -110,8 +122,8 @@ pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, rng: &mut im
         let mut worst_val = 0i32;
         for &(r, c) in &occupied {
             if let Some(gc) = grid.get(r, c) {
-                if gc.face_up && !matches!(gc.card, Card::Wild) {
-                    let v = match &gc.card { Card::Number(v) => v.abs(), Card::Wild => 0 };
+                if gc.face_up && !matches!(gc.card, Card::Wild | Card::WildShaded | Card::WildUnshaded) {
+                    let v = match &gc.card { Card::Number(v) => v.abs(), _ => 0 };
                     if v >= worst_val { worst_val = v; worst_pos = (r, c); }
                 }
             }
@@ -123,7 +135,15 @@ pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, rng: &mut im
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::super::config::AiArchetype;
+    use super::super::super::config::{AiArchetype, GameMode};
+
+    fn numbers_ctx() -> EliminationContext {
+        EliminationContext {
+            game_mode: GameMode::Numbers,
+            neg_min: -5, pos_max: 8,
+            shade_matters: false, allow_cancellation: false,
+        }
+    }
 
     fn expert_opportunist() -> PlayerConfig {
         PlayerConfig {
@@ -143,10 +163,11 @@ mod tests {
     #[test]
     fn test_always_takes_wild_from_discard() {
         let config = expert_opportunist();
+        let ctx = numbers_ctx();
         let grid = make_grid_all_face_up(&[1,2,3,4, 5,6,7,8, 1,2,3,4, 5,6,7,8]);
         let mut rng = rand::thread_rng();
         for _ in 0..20 {
-            let result = choose_draw_source(&config, Some(&Card::Wild), &grid, -5, 8, &mut rng);
+            let result = choose_draw_source(&config, Some(&Card::Wild), &grid, &ctx, &mut rng);
             assert_eq!(result, DrawSource::DiscardPile);
         }
     }
@@ -154,6 +175,7 @@ mod tests {
     #[test]
     fn test_takes_completing_card_from_discard() {
         let config = expert_opportunist();
+        let ctx = numbers_ctx();
         // Row 0: -3, 1, 2, face_down → needs 0 to complete
         let cards: Vec<Card> = vec![
             Card::Number(-3), Card::Number(1), Card::Number(2), Card::Number(7),
@@ -166,13 +188,14 @@ mod tests {
         for r in 1..4 { for c in 0..4 { grid.flip_card(r, c); } }
 
         let mut rng = rand::thread_rng();
-        let result = choose_draw_source(&config, Some(&Card::Number(0)), &grid, -5, 8, &mut rng);
+        let result = choose_draw_source(&config, Some(&Card::Number(0)), &grid, &ctx, &mut rng);
         assert_eq!(result, DrawSource::DiscardPile);
     }
 
     #[test]
     fn test_places_card_to_complete_line() {
         let config = expert_opportunist();
+        let ctx = numbers_ctx();
         let cards: Vec<Card> = vec![
             Card::Number(-3), Card::Number(1), Card::Number(2), Card::Number(7),
             Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
@@ -184,7 +207,7 @@ mod tests {
         for r in 1..4 { for c in 0..4 { grid.flip_card(r, c); } }
 
         let mut rng = rand::thread_rng();
-        let action = choose_action(&config, &Card::Number(0), &grid, -5, 8, &mut rng);
+        let action = choose_action(&config, &Card::Number(0), &grid, &ctx, &mut rng);
         match action {
             TurnAction::ReplaceCard { row, col } => {
                 assert_eq!((row, col), (0, 3), "Should place at face-down slot completing row 0");

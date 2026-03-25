@@ -19,8 +19,8 @@ function buildPlayAiPanels() {
       <div class="play-ai-config" style="display:flex;align-items:center;gap:0.8rem;margin:0.5rem 0;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">
         <strong style="min-width:5rem">Player ${i + 1}:</strong>
         <select id="play-arch-${i}">
-          <option value="Opportunist">Opportunist (Intermediate)</option>
           <option value="Methodical">Methodical (Beginner)</option>
+          <option value="Opportunist">Opportunist (Intermediate)</option>
           <option value="Calculator">Calculator (Expert)</option>
         </select>
         <label style="font-size:0.8rem">Skill:</label>
@@ -372,6 +372,12 @@ function resetPlayGame() {
   playState = null;
   document.getElementById('play-setup').classList.remove('hidden');
   document.getElementById('play-board').classList.add('hidden');
+}
+
+function confirmQuitGame() {
+  if (confirm('Quit the current game and return to setup?')) {
+    resetPlayGame();
+  }
 }
 
 // Build initial AI panels on page load
