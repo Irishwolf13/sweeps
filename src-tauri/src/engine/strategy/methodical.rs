@@ -54,6 +54,11 @@ pub fn choose_draw_source(
         }
     }
 
+    // Low cards (abs <= 4) are worth taking even without a specific line target
+    if card_value.abs() <= 4 {
+        return DrawSource::DiscardPile;
+    }
+
     DrawSource::DrawPile
 }
 
@@ -99,9 +104,16 @@ pub fn choose_action(
         return TurnAction::ReplaceCard { row: r, col: c };
     }
 
-    // Priority 2: Place if best_placement finds a good spot (threshold 20)
+    // Priority 2: Place if best_placement finds a good spot
     let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
-    if score >= 20.0 {
+
+    // High cards (abs > 4): only place if score is strong (line-helping),
+    // otherwise gamble on flipping a face-down card which is likely better.
+    // Low cards (abs <= 4): place with a lower bar since they're safe.
+    let dominated_by_completion = score >= 500.0; // best_placement gives +500 for completions
+    let place_threshold = if card_value.abs() > 4 && !dominated_by_completion { 40.0 } else { 20.0 };
+
+    if score >= place_threshold {
         return TurnAction::ReplaceCard { row: pos.0, col: pos.1 };
     }
 
