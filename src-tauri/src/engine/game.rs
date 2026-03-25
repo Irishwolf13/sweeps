@@ -356,15 +356,24 @@ fn check_and_apply_eliminations(
             break;
         }
 
-        // Apply the first elimination found
-        let elim = &eliminations[0];
-        let is_diagonal = matches!(
-            elim.kind,
-            EliminationType::MainDiagonal | EliminationType::AntiDiagonal
-        );
+        // Merge ALL simultaneous eliminations (e.g., row + column through same Wild)
+        let mut all_positions: Vec<(usize, usize)> = Vec::new();
+        let mut has_diagonal = false;
+        let mut diagonal_kind = None;
+        for elim in &eliminations {
+            for pos in &elim.positions {
+                if !all_positions.contains(pos) {
+                    all_positions.push(*pos);
+                }
+            }
+            if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
+                has_diagonal = true;
+                diagonal_kind = Some(elim.kind.clone());
+            }
+        }
 
-        let removed = state.players[player_idx].grid.eliminate(&elim.positions);
-        state.players[player_idx].eliminations += 1;
+        let removed = state.players[player_idx].grid.eliminate(&all_positions);
+        state.players[player_idx].eliminations += eliminations.len() as u32;
 
         // Player chooses which card goes to discard (considering next player)
         if !removed.is_empty() {
@@ -378,11 +387,13 @@ fn check_and_apply_eliminations(
         }
 
         // Reshape grid after diagonal elimination
-        if is_diagonal {
-            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, &ctx, rng);
-            state.players[player_idx]
-                .grid
-                .reshape_after_diagonal(&elim.kind, direction);
+        if has_diagonal {
+            if let Some(ref kind) = diagonal_kind {
+                let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, kind, &ctx, rng);
+                state.players[player_idx]
+                    .grid
+                    .reshape_after_diagonal(kind, direction);
+            }
         }
 
         // Clean up empty rows

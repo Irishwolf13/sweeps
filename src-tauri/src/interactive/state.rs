@@ -464,36 +464,48 @@ impl InteractiveGame {
                 break;
             }
 
-            let elim = &eliminations[0];
-            let is_diagonal = matches!(
-                elim.kind,
-                EliminationType::MainDiagonal | EliminationType::AntiDiagonal
-            );
+            // Merge ALL simultaneous eliminations
+            let mut all_positions: Vec<(usize, usize)> = Vec::new();
+            let mut has_diagonal = false;
+            let mut diagonal_kind = None;
+            for elim in &eliminations {
+                let reason = match &elim.reason {
+                    crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+                    crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                    crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+                };
+                let kind_str = match &elim.kind {
+                    EliminationType::Row(r) => format!("Row {}", r),
+                    EliminationType::Column(c) => format!("Column {}", c),
+                    EliminationType::MainDiagonal => "Main diagonal".to_string(),
+                    EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+                };
+                self.action_log.push(format!("Elimination! {} ({}).", kind_str, reason));
 
-            let removed = self.players[self.human_player].grid.eliminate(&elim.positions);
-            self.players[self.human_player].eliminations += 1;
+                for pos in &elim.positions {
+                    if !all_positions.contains(pos) {
+                        all_positions.push(*pos);
+                    }
+                }
+                if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
+                    has_diagonal = true;
+                    diagonal_kind = Some(elim.kind.clone());
+                }
+            }
 
-            let reason = match &elim.reason {
-                crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
-                crate::engine::grid::EliminationReason::AllMatching => "all-matching",
-                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
-            };
-            let kind_str = match &elim.kind {
-                EliminationType::Row(r) => format!("Row {}", r),
-                EliminationType::Column(c) => format!("Column {}", c),
-                EliminationType::MainDiagonal => "Main diagonal".to_string(),
-                EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
-            };
-            self.action_log.push(format!("Elimination! {} ({}).", kind_str, reason));
+            let removed = self.players[self.human_player].grid.eliminate(&all_positions);
+            self.players[self.human_player].eliminations += eliminations.len() as u32;
 
             if !removed.is_empty() {
                 let discard_idx = self.best_discard_idx(&removed);
                 self.discard_pile.push(removed[discard_idx].clone());
             }
 
-            if is_diagonal {
-                self.pending = InternalPending::ChooseSlideDirection(elim.kind.clone());
-                return;
+            if has_diagonal {
+                if let Some(kind) = diagonal_kind {
+                    self.pending = InternalPending::ChooseSlideDirection(kind);
+                    return;
+                }
             }
 
             self.players[self.human_player].grid.cleanup();
@@ -524,27 +536,37 @@ impl InteractiveGame {
                 break;
             }
 
-            let elim = &eliminations[0];
-            let is_diagonal = matches!(
-                elim.kind,
-                EliminationType::MainDiagonal | EliminationType::AntiDiagonal
-            );
+            // Merge ALL simultaneous eliminations
+            let mut all_positions: Vec<(usize, usize)> = Vec::new();
+            let mut has_diagonal = false;
+            let mut diagonal_kind = None;
+            for elim in &eliminations {
+                let reason = match &elim.reason {
+                    crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+                    crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                    crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+                };
+                let kind_str = match &elim.kind {
+                    EliminationType::Row(r) => format!("Row {}", r),
+                    EliminationType::Column(c) => format!("Column {}", c),
+                    EliminationType::MainDiagonal => "Main diagonal".to_string(),
+                    EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+                };
+                self.action_log.push(format!("{} got an elimination! {} ({}).", player_name, kind_str, reason));
 
-            let removed = self.players[player_idx].grid.eliminate(&elim.positions);
-            self.players[player_idx].eliminations += 1;
+                for pos in &elim.positions {
+                    if !all_positions.contains(pos) {
+                        all_positions.push(*pos);
+                    }
+                }
+                if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
+                    has_diagonal = true;
+                    diagonal_kind = Some(elim.kind.clone());
+                }
+            }
 
-            let reason = match &elim.reason {
-                crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
-                crate::engine::grid::EliminationReason::AllMatching => "all-matching",
-                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
-            };
-            let kind_str = match &elim.kind {
-                EliminationType::Row(r) => format!("Row {}", r),
-                EliminationType::Column(c) => format!("Column {}", c),
-                EliminationType::MainDiagonal => "Main diagonal".to_string(),
-                EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
-            };
-            self.action_log.push(format!("{} got an elimination! {} ({}).", player_name, kind_str, reason));
+            let removed = self.players[player_idx].grid.eliminate(&all_positions);
+            self.players[player_idx].eliminations += eliminations.len() as u32;
 
             if !removed.is_empty() {
                 let player_config = self.config.players[player_idx].clone();
@@ -557,21 +579,23 @@ impl InteractiveGame {
                 self.discard_pile.push(removed[discard_idx].clone());
             }
 
-            if is_diagonal {
-                let player_config = self.config.players[player_idx].clone();
-                let direction = strategy::choose_slide_direction(
-                    &player_config,
-                    &self.players[player_idx].grid,
-                    &elim.kind,
-                    &ctx,
-                    &mut self.rng,
-                );
-                let dir_name = match &direction {
-                    SlideDirection::Horizontal => "horizontal",
-                    SlideDirection::Vertical => "vertical",
-                };
-                self.action_log.push(format!("{} chose {} slide.", player_name, dir_name));
-                self.players[player_idx].grid.reshape_after_diagonal(&elim.kind, direction);
+            if has_diagonal {
+                if let Some(ref kind) = diagonal_kind {
+                    let player_config = self.config.players[player_idx].clone();
+                    let direction = strategy::choose_slide_direction(
+                        &player_config,
+                        &self.players[player_idx].grid,
+                        kind,
+                        &ctx,
+                        &mut self.rng,
+                    );
+                    let dir_name = match &direction {
+                        SlideDirection::Horizontal => "horizontal",
+                        SlideDirection::Vertical => "vertical",
+                    };
+                    self.action_log.push(format!("{} chose {} slide.", player_name, dir_name));
+                    self.players[player_idx].grid.reshape_after_diagonal(kind, direction);
+                }
             }
 
             self.players[player_idx].grid.cleanup();
