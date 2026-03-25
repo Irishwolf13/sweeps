@@ -1,7 +1,7 @@
 {
-  "productName": "Number Sweep Simulator",
+  "productName": "Sweep Simulator",
   "version": "0.1.0",
-  "identifier": "com.numbersweep.sim",
+  "identifier": "com.sweep.sim",
   "build": {
     "frontendDist": "../src"
   },
@@ -9,7 +9,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Number Sweep Simulator",
+        "title": "Sweep Simulator",
         "width": 1280,
         "height": 900,
         "resizable": true

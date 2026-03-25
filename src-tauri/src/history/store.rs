@@ -17,7 +17,7 @@ pub struct RunMeta {
 
 pub fn runs_dir() -> Result<PathBuf, String> {
     let base = dirs::data_local_dir().ok_or("Could not find local data directory")?;
-    let dir = base.join("number-sweep-sim").join("runs");
+    let dir = base.join("sweep-sim").join("runs");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create runs directory: {}", e))?;
     Ok(dir)
 }

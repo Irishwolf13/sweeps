@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for the Number Sweep Simulator",
+  "description": "Default capabilities for the Sweep Simulator",
   "windows": ["main"],
   "permissions": [
     "core:default",
