@@ -703,7 +703,7 @@ impl InteractiveGame {
                             .sum::<i32>()
                     }
                 };
-                if p.went_out_first { score -= 5; }
+                if p.went_out_first { score -= 2; }
                 score
             })
             .collect()

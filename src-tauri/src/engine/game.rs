@@ -438,10 +438,9 @@ fn score_round(config: &GameConfig, state: &RoundState) -> Vec<i32> {
                 }
             };
 
-            // Going out first: score = remaining_cards - 5
-            // (4 cards = -1, 2 cards = -3, 0 cards = -5)
+            // Going out first: bonus of -2
             if p.went_out_first {
-                score -= 5;
+                score -= 2;
             }
 
             score
