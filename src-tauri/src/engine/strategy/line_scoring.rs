@@ -200,6 +200,17 @@ pub fn best_placement(
             }
         }
 
+        // Strongly penalize replacing a known face-up card when face-down
+        // slots still exist — replacing a known card wastes a turn unless
+        // it completes a line. Only completions bypass this penalty.
+        let is_face_up = grid.get(r, c).map_or(false, |gc| gc.face_up);
+        let has_face_down = occupied.iter().any(|&(rr, cc)| {
+            grid.get(rr, cc).map_or(false, |gc| !gc.face_up)
+        });
+        if is_face_up && has_face_down && !completes_a_line {
+            score -= 200.0;
+        }
+
         // Line completion is always the top priority: add a large bonus to dominate
         if completes_a_line {
             score += 500.0;
