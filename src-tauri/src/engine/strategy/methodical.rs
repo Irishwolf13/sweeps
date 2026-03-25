@@ -114,21 +114,29 @@ pub fn choose_action(
         return TurnAction::ReplaceCard { row: r, col: c };
     }
 
-    // Priority 2: Place if best_placement finds a good spot
-    let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
-
-    // High cards: only place if score is strong (line-helping),
-    // otherwise gamble on flipping a face-down card which is likely better.
-    // Low cards: place with a lower bar since they're safe.
+    // Priority 2: High cards (abs > threshold) — only place if they specifically
+    // help a line. Otherwise discard and flip; a face-down card is probably better.
     let threshold = low_card_threshold(grid);
-    let dominated_by_completion = score >= 500.0; // best_placement gives +500 for completions
-    let place_threshold = if card_value.abs() > threshold && !dominated_by_completion { 40.0 } else { 20.0 };
+    let is_high_card = card_value.abs() > threshold && !matches!(drawn_card, Card::Wild);
 
-    if score >= place_threshold {
+    if is_high_card && !face_down.is_empty() {
+        // Check if this high card actually helps any line enough to justify placing
+        let helps_a_line = lines.iter().any(|(line, _)| {
+            card_fits_line(card_value, line, neg_min, pos_max) >= 40.0
+        });
+        if !helps_a_line {
+            let target = best_flip_target(&face_down, &lines);
+            return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
+        }
+    }
+
+    // Priority 3: Place if best_placement finds a good spot
+    let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
+    if score >= 20.0 {
         return TurnAction::ReplaceCard { row: pos.0, col: pos.1 };
     }
 
-    // Priority 3: Discard and flip the best face-down card
+    // Priority 4: Discard and flip the best face-down card
     if !face_down.is_empty() {
         let target = best_flip_target(&face_down, &lines);
         return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
