@@ -1,33 +1,11 @@
 use rand::Rng;
 
-use super::line_scoring::{score_all_lines, card_fits_line, best_placement, best_flip_target, LineStatus};
-use super::{DrawSource, TurnAction, MethodicalState, Phase, should_play_smart};
+use super::line_scoring::{score_all_lines, card_fits_line, best_placement, best_flip_target};
+use super::{DrawSource, TurnAction, MethodicalState, should_play_smart};
 use super::super::card::Card;
 use super::super::config::PlayerConfig;
 use super::super::grid::PlayerGrid;
 
-/// Compute the face-down ratio threshold for transitioning out of Scout.
-/// High skill = shorter scouting (threshold ~0.5), low skill = longer scouting (threshold ~0.75).
-fn scout_threshold(skill: f64) -> f64 {
-    0.75 - skill * 0.25
-}
-
-/// Select the 1-2 best target lines for the Build phase.
-fn select_targets(lines: &[(LineStatus, f64)]) -> Vec<usize> {
-    let mut indexed: Vec<(usize, f64)> = lines.iter().enumerate()
-        .filter(|(_, (status, score))| *score > 5.0 && status.gap_achievable)
-        .map(|(i, (_, score))| (i, *score))
-        .collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    indexed.iter().take(2).map(|(i, _)| *i).collect()
-}
-
-/// Check if any target line is now hopeless and needs re-evaluation.
-fn targets_still_valid(state: &MethodicalState, lines: &[(LineStatus, f64)]) -> bool {
-    state.target_lines.iter().all(|&idx| {
-        idx < lines.len() && lines[idx].0.gap_achievable && lines[idx].1 > 5.0
-    })
-}
 
 pub fn choose_draw_source(
     config: &PlayerConfig,
@@ -88,211 +66,53 @@ pub fn choose_action(
     state: &mut MethodicalState,
     rng: &mut impl Rng,
 ) -> TurnAction {
+    let _ = state; // Stateless — state param kept for API compatibility
+
     let face_down = grid.face_down_positions();
-    let total_cards = grid.remaining_card_count();
-    state.turns_in_phase += 1;
 
     if !should_play_smart(config.skill, rng) {
         return super::opportunist::fallback_action(drawn_card, grid, rng);
     }
 
+    let card_value = match drawn_card { Card::Number(v) => *v, Card::Wild => 0 };
     let lines = score_all_lines(grid, neg_min, pos_max);
 
-    // Phase transitions
-    update_phase(state, &face_down, total_cards, &lines, config.skill);
-
-    match state.phase {
-        Phase::Scout => {
-            // Only keep Wilds and 0s
-            let card_value = match drawn_card { Card::Number(v) => *v, Card::Wild => 0 };
-            let is_wild = matches!(drawn_card, Card::Wild);
-
-            if is_wild || card_value == 0 {
-                // Place in a face-down slot in the most promising line
-                if !face_down.is_empty() {
-                    let target = best_scout_flip(&face_down, &lines);
-                    return TurnAction::ReplaceCard { row: target.0, col: target.1 };
-                }
-            }
-            // Discard and flip a card in a line with most face-up neighbors
-            if !face_down.is_empty() {
-                let target = best_scout_flip(&face_down, &lines);
-                return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
-            }
-            // Fallback: all face-up
-            let (pos, _) = best_placement(drawn_card, grid, neg_min, pos_max);
-            TurnAction::ReplaceCard { row: pos.0, col: pos.1 }
-        }
-        Phase::Build => {
-            // Serve target lines
-            let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
-
-            // Check if placement helps a target line specifically
-            let card_value = match drawn_card { Card::Number(v) => *v, Card::Wild => 0 };
-            let mut helps_target = false;
-            for &idx in &state.target_lines {
-                if idx < lines.len() {
-                    let fit = card_fits_line(card_value, &lines[idx].0, neg_min, pos_max);
-                    if fit >= 30.0 { helps_target = true; break; }
-                }
-            }
-
-            if helps_target && score >= 20.0 {
-                return TurnAction::ReplaceCard { row: pos.0, col: pos.1 };
-            }
-
-            // Doesn't help targets — discard and flip in target line
-            if !face_down.is_empty() {
-                let target = best_target_flip(&face_down, &lines, &state.target_lines);
-                return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
-            }
-
-            // All face-up, use best placement regardless
-            TurnAction::ReplaceCard { row: pos.0, col: pos.1 }
-        }
-        Phase::Close => {
-            // Only place cards that complete a line
-            let card_value = match drawn_card { Card::Number(v) => *v, Card::Wild => 0 };
-
-            // Check target lines first
-            for &idx in &state.target_lines {
-                if idx < lines.len() {
-                    if card_fits_line(card_value, &lines[idx].0, neg_min, pos_max) >= 100.0 {
-                        // Find the face-down position in this line
-                        for &(r, c) in &lines[idx].0.positions {
-                            if let Some(gc) = grid.get(r, c) {
-                                if !gc.face_up {
-                                    return TurnAction::ReplaceCard { row: r, col: c };
-                                }
-                            }
+    // Priority 1: Complete a line if possible
+    // Find the completable line with the highest score
+    let mut best_completion: Option<((usize, usize), f64)> = None;
+    for (line, line_score) in &lines {
+        if card_fits_line(card_value, line, neg_min, pos_max) >= 100.0 {
+            // Find the face-down slot in this line
+            for &(r, c) in &line.positions {
+                if let Some(gc) = grid.get(r, c) {
+                    if !gc.face_up {
+                        let is_better = best_completion.map_or(true, |(_, best_s)| *line_score > best_s);
+                        if is_better {
+                            best_completion = Some(((r, c), *line_score));
                         }
                     }
                 }
             }
-
-            // Check ALL lines for completion
-            for (line, _) in &lines {
-                if card_fits_line(card_value, line, neg_min, pos_max) >= 100.0 {
-                    for &(r, c) in &line.positions {
-                        if let Some(gc) = grid.get(r, c) {
-                            if !gc.face_up {
-                                return TurnAction::ReplaceCard { row: r, col: c };
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Doesn't complete anything — discard and flip
-            if !face_down.is_empty() {
-                let target = best_target_flip(&face_down, &lines, &state.target_lines);
-                return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
-            }
-
-            // All face-up, must place somewhere
-            let (pos, _) = best_placement(drawn_card, grid, neg_min, pos_max);
-            TurnAction::ReplaceCard { row: pos.0, col: pos.1 }
         }
     }
-}
-
-fn update_phase(
-    state: &mut MethodicalState,
-    face_down: &[(usize, usize)],
-    total_cards: usize,
-    lines: &[(LineStatus, f64)],
-    skill: f64,
-) {
-    let face_down_ratio = if total_cards == 0 { 0.0 } else { face_down.len() as f64 / total_cards as f64 };
-
-    match state.phase {
-        Phase::Scout => {
-            if face_down_ratio <= scout_threshold(skill) {
-                state.phase = Phase::Build;
-                state.turns_in_phase = 0;
-                state.target_lines = select_targets(lines);
-            }
-        }
-        Phase::Build => {
-            // Re-evaluate targets if they became hopeless
-            if !targets_still_valid(state, lines) {
-                state.target_lines = select_targets(lines);
-            }
-            // Transition to Close if any target is 1 card away
-            for &idx in &state.target_lines {
-                if idx < lines.len() && lines[idx].0.face_down_count == 1 && lines[idx].1 >= 70.0 {
-                    state.phase = Phase::Close;
-                    state.turns_in_phase = 0;
-                    return;
-                }
-            }
-        }
-        Phase::Close => {
-            // If no target is close anymore, go back to Build
-            let any_close = state.target_lines.iter().any(|&idx| {
-                idx < lines.len() && lines[idx].0.face_down_count == 1 && lines[idx].1 >= 70.0
-            });
-            if !any_close {
-                state.phase = Phase::Build;
-                state.turns_in_phase = 0;
-                state.target_lines = select_targets(lines);
-            }
-        }
+    if let Some(((r, c), _)) = best_completion {
+        return TurnAction::ReplaceCard { row: r, col: c };
     }
-}
 
-/// Best face-down card to flip during Scout: prefer cards sharing lines with face-up cards.
-fn best_scout_flip(
-    face_down: &[(usize, usize)],
-    lines: &[(LineStatus, f64)],
-) -> (usize, usize) {
-    let mut best_pos = face_down[0];
-    let mut best_score = 0.0f64;
-
-    for &(r, c) in face_down {
-        let mut score = 0.0f64;
-        for (line, _) in lines {
-            if line.positions.contains(&(r, c)) {
-                // Prefer lines with more face-up cards (concentrate info gathering)
-                score += line.face_up_count as f64;
-            }
-        }
-        if score > best_score {
-            best_score = score;
-            best_pos = (r, c);
-        }
+    // Priority 2: Place if best_placement finds a good spot (threshold 20)
+    let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
+    if score >= 20.0 {
+        return TurnAction::ReplaceCard { row: pos.0, col: pos.1 };
     }
-    best_pos
-}
 
-/// Best face-down card to flip during Build/Close: prefer cards in target lines.
-fn best_target_flip(
-    face_down: &[(usize, usize)],
-    lines: &[(LineStatus, f64)],
-    target_lines: &[usize],
-) -> (usize, usize) {
-    let mut best_pos = face_down[0];
-    let mut best_score = f64::NEG_INFINITY;
-
-    for &(r, c) in face_down {
-        let mut score = 0.0f64;
-        for &idx in target_lines {
-            if idx < lines.len() && lines[idx].0.positions.contains(&(r, c)) {
-                score += lines[idx].1 * 2.0; // Double weight for target lines
-            }
-        }
-        // Also consider non-target lines
-        for (line, line_score) in lines {
-            if line.positions.contains(&(r, c)) {
-                score += line_score;
-            }
-        }
-        if score > best_score {
-            best_score = score;
-            best_pos = (r, c);
-        }
+    // Priority 3: Discard and flip the best face-down card
+    if !face_down.is_empty() {
+        let target = best_flip_target(&face_down, &lines);
+        return TurnAction::DiscardAndFlip { row: target.0, col: target.1 };
     }
-    best_pos
+
+    // Priority 4: All face-up, place at best spot regardless of score
+    TurnAction::ReplaceCard { row: pos.0, col: pos.1 }
 }
 
 #[cfg(test)]
@@ -427,5 +247,144 @@ mod tests {
             }
         }
         assert!(saw_draw && saw_discard, "Skill 0 should produce both draw and discard randomly");
+    }
+
+    // ── Action tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_action_places_completing_card() {
+        let config = expert_methodical();
+        let grid = make_grid_one_away(); // Row 0: -3,1,2,face_down → needs 0
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        let action = choose_action(&config, &Card::Number(0), &grid, -5, 8, &mut state, &mut rng);
+        match action {
+            TurnAction::ReplaceCard { row, col } => assert_eq!((row, col), (0, 3)),
+            _ => panic!("Should place completing card at (0,3)"),
+        }
+    }
+
+    #[test]
+    fn test_action_picks_highest_scoring_completion() {
+        // Two rows both need 0 to complete.
+        // Row 0: -3, 1, 2, face_down → gap=0, needs 0
+        // Row 1: -2, 1, 1, face_down → gap=0, needs 0
+        // Both completable — we just verify a completion happens.
+        let cards: Vec<Card> = vec![
+            Card::Number(-3), Card::Number(1), Card::Number(2), Card::Number(7),
+            Card::Number(-2), Card::Number(1), Card::Number(1), Card::Number(8),
+            Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
+            Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
+        ];
+        let mut grid = PlayerGrid::new_no_flips(cards);
+        grid.flip_card(0, 0); grid.flip_card(0, 1); grid.flip_card(0, 2);
+        grid.flip_card(1, 0); grid.flip_card(1, 1); grid.flip_card(1, 2);
+        for r in 2..4 { for c in 0..4 { grid.flip_card(r, c); } }
+
+        let config = expert_methodical();
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        let action = choose_action(&config, &Card::Number(0), &grid, -5, 8, &mut state, &mut rng);
+        match action {
+            TurnAction::ReplaceCard { row, col } => {
+                assert!(
+                    (row == 0 && col == 3) || (row == 1 && col == 3),
+                    "Should place at a completing position, got ({}, {})", row, col
+                );
+            }
+            _ => panic!("Should place completing card"),
+        }
+    }
+
+    #[test]
+    fn test_action_places_helpful_card() {
+        let config = expert_methodical();
+        // Grid with face-down cards where a Wild is useful
+        let cards: Vec<Card> = vec![
+            Card::Number(-3), Card::Number(1), Card::Number(2), Card::Number(7),
+            Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
+            Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
+            Card::Number(5), Card::Number(5), Card::Number(5), Card::Number(5),
+        ];
+        let mut grid = PlayerGrid::new_no_flips(cards);
+        grid.flip_card(0, 0); grid.flip_card(0, 1); grid.flip_card(0, 2);
+        for r in 1..4 { for c in 0..4 { grid.flip_card(r, c); } }
+
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        // best_placement for a Wild should find a good spot (score >= 20)
+        let action = choose_action(&config, &Card::Wild, &grid, -5, 8, &mut state, &mut rng);
+        assert!(matches!(action, TurnAction::ReplaceCard { .. }), "Wild should always be placed");
+    }
+
+    #[test]
+    fn test_action_discards_unhelpful_card_and_flips() {
+        let config = expert_methodical();
+        // Grid with all face-up except one face-down. An 8 won't help much.
+        let cards: Vec<Card> = vec![
+            Card::Number(1), Card::Number(2), Card::Number(3), Card::Number(4),
+            Card::Number(5), Card::Number(6), Card::Number(7), Card::Number(8),
+            Card::Number(1), Card::Number(2), Card::Number(3), Card::Number(4),
+            Card::Number(5), Card::Number(6), Card::Number(7), Card::Number(8),
+        ];
+        let mut grid = PlayerGrid::new_no_flips(cards);
+        // Flip all except (3,3)
+        for r in 0..4 {
+            for c in 0..4 {
+                if !(r == 3 && c == 3) { grid.flip_card(r, c); }
+            }
+        }
+
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        let action = choose_action(&config, &Card::Number(8), &grid, -5, 8, &mut state, &mut rng);
+        assert!(matches!(action, TurnAction::DiscardAndFlip { .. }), "Should discard unhelpful card and flip");
+    }
+
+    #[test]
+    fn test_action_all_face_up_places_anyway() {
+        let config = expert_methodical();
+        let grid = make_grid_all_face_up(&[1,2,3,4, 5,6,7,8, 1,2,3,4, 5,6,7,8]);
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        let action = choose_action(&config, &Card::Number(0), &grid, -5, 8, &mut state, &mut rng);
+        assert!(matches!(action, TurnAction::ReplaceCard { .. }), "Must place when all face-up");
+    }
+
+    #[test]
+    fn test_action_skill_zero_uses_fallback() {
+        // skill 0.0 → should_play_smart always false → fallback_action
+        // fallback places low cards (abs <= 3) and discards high cards
+        let config = PlayerConfig {
+            archetype: AiArchetype::Methodical,
+            skill: 0.0,
+            flip_strategy: Default::default(),
+        };
+        let cards: Vec<Card> = vec![
+            Card::Number(1), Card::Number(2), Card::Number(3), Card::Number(4),
+            Card::Number(5), Card::Number(6), Card::Number(7), Card::Number(8),
+            Card::Number(1), Card::Number(2), Card::Number(3), Card::Number(4),
+            Card::Number(5), Card::Number(6), Card::Number(7), Card::Number(8),
+        ];
+        let mut grid = PlayerGrid::new_no_flips(cards);
+        grid.flip_card(0, 0); grid.flip_card(0, 1);
+
+        let mut state = MethodicalState::new();
+        let mut rng = rand::thread_rng();
+
+        // High card with face-down available → fallback should discard and flip
+        let action = choose_action(&config, &Card::Number(8), &grid, -5, 8, &mut state, &mut rng);
+        assert!(matches!(action, TurnAction::DiscardAndFlip { .. }),
+            "Skill 0 with high card should use fallback (discard and flip)");
+
+        // Low card with face-down available → fallback should place it
+        let action = choose_action(&config, &Card::Number(0), &grid, -5, 8, &mut state, &mut rng);
+        assert!(matches!(action, TurnAction::ReplaceCard { .. }),
+            "Skill 0 with low card should use fallback (place it)");
     }
 }
