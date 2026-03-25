@@ -26,8 +26,11 @@ pub enum TurnAction {
 }
 
 // ── Methodical state ──────────────────────────────────────────────────────
+// TODO: MethodicalState and Phase are no longer used by the stateless Methodical strategy.
+// Remove once we're confident in the new approach and can update the dispatch signatures.
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum Phase {
     Scout,
     Build,
