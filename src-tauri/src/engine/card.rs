@@ -144,6 +144,8 @@ mod tests {
     fn test_shapes_deck_validation() {
         let config = DeckConfig::shapes_scaled(4);
         assert!(config.validate(4).is_ok());
-        assert!(config.validate(6).is_err());
+        // shapes_scaled(2)=76 cards can't handle 6 players (need 116)
+        let config2 = DeckConfig::shapes_scaled(2);
+        assert!(config2.validate(6).is_err());
     }
 }
