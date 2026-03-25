@@ -374,6 +374,12 @@ function resetPlayGame() {
   document.getElementById('play-board').classList.add('hidden');
 }
 
+function confirmQuitGame() {
+  if (confirm('Quit the current game and return to setup?')) {
+    resetPlayGame();
+  }
+}
+
 // Build initial AI panels on page load
 document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('play-ai-panels')) {
