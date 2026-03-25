@@ -333,13 +333,13 @@ impl InteractiveGame {
         let player_config = &self.config.players[player_idx].clone();
 
         // 1. Choose draw source
+        let ctx = self.config.elimination_context();
         let discard_top = self.discard_pile.last().cloned();
         let source = strategy::choose_draw_source(
             player_config,
             discard_top.as_ref(),
             &self.players[player_idx].grid,
-            self.config.deck.neg_min(),
-            self.config.deck.pos_max(),
+            &ctx,
             &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
@@ -366,8 +366,7 @@ impl InteractiveGame {
             player_config,
             &drawn,
             &self.players[player_idx].grid,
-            self.config.deck.neg_min(),
-            self.config.deck.pos_max(),
+            &ctx,
             &mut self.methodical_states[player_idx],
             &mut self.rng,
         );
@@ -513,8 +512,8 @@ impl InteractiveGame {
 
     fn check_eliminations_ai(&mut self, player_idx: usize) {
         let player_name = self.player_name(player_idx);
+        let ctx = self.config.elimination_context();
         loop {
-            let ctx = self.config.elimination_context();
             let eliminations = self.players[player_idx].grid.find_eliminations(
                 self.config.allow_matching_elimination,
                 self.config.allow_diagonal_elimination,
@@ -553,7 +552,7 @@ impl InteractiveGame {
                 let next_grid = Some(&self.players[next_player].grid);
                 let discard_idx = strategy::choose_discard_with_opponent(
                     &player_config, &removed, next_grid,
-                    self.config.deck.neg_min(), self.config.deck.pos_max(), &mut self.rng,
+                    &ctx, &mut self.rng,
                 );
                 self.discard_pile.push(removed[discard_idx].clone());
             }
@@ -564,8 +563,7 @@ impl InteractiveGame {
                     &player_config,
                     &self.players[player_idx].grid,
                     &elim.kind,
-                    self.config.deck.neg_min(),
-                    self.config.deck.pos_max(),
+                    &ctx,
                     &mut self.rng,
                 );
                 let dir_name = match &direction {

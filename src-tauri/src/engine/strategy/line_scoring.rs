@@ -1,4 +1,5 @@
 use super::super::card::Card;
+use super::super::config::EliminationContext;
 use super::super::grid::PlayerGrid;
 
 // ── LineStatus ────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ pub struct LineStatus {
 
 /// Score all lines (rows, columns, diagonals) in the grid.
 /// Returns each line's status and a score from 0-100.
-pub fn score_all_lines(grid: &PlayerGrid, neg_min: i32, pos_max: i32) -> Vec<(LineStatus, f64)> {
+pub fn score_all_lines(grid: &PlayerGrid, ctx: &EliminationContext) -> Vec<(LineStatus, f64)> {
     let mut results = Vec::new();
 
     // Rows
@@ -29,7 +30,7 @@ pub fn score_all_lines(grid: &PlayerGrid, neg_min: i32, pos_max: i32) -> Vec<(Li
         let cols = grid.col_count(r);
         if cols < 2 { continue; }
         let positions: Vec<(usize, usize)> = (0..cols).map(|c| (r, c)).collect();
-        let status = analyze_line(grid, &positions, neg_min, pos_max);
+        let status = analyze_line(grid, &positions, ctx);
         let score = score_line(&status);
         results.push((status, score));
     }
@@ -42,7 +43,7 @@ pub fn score_all_lines(grid: &PlayerGrid, neg_min: i32, pos_max: i32) -> Vec<(Li
             .map(|r| (r, c))
             .collect();
         if positions.len() < 2 { continue; }
-        let status = analyze_line(grid, &positions, neg_min, pos_max);
+        let status = analyze_line(grid, &positions, ctx);
         let score = score_line(&status);
         results.push((status, score));
     }
@@ -52,12 +53,12 @@ pub fn score_all_lines(grid: &PlayerGrid, neg_min: i32, pos_max: i32) -> Vec<(Li
         let n = grid.row_count();
         if n >= 2 {
             let main_diag: Vec<(usize, usize)> = (0..n).map(|i| (i, i)).collect();
-            let status = analyze_line(grid, &main_diag, neg_min, pos_max);
+            let status = analyze_line(grid, &main_diag, ctx);
             let score = score_line(&status);
             results.push((status, score));
 
             let anti_diag: Vec<(usize, usize)> = (0..n).map(|i| (i, n - 1 - i)).collect();
-            let status = analyze_line(grid, &anti_diag, neg_min, pos_max);
+            let status = analyze_line(grid, &anti_diag, ctx);
             let score = score_line(&status);
             results.push((status, score));
         }
@@ -66,9 +67,14 @@ pub fn score_all_lines(grid: &PlayerGrid, neg_min: i32, pos_max: i32) -> Vec<(Li
     results
 }
 
-/// How well does placing a card with this value help a specific line?
+/// How well does placing a card help a specific line?
 /// Returns 0-100. 100 = completes the line.
-pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max: i32) -> f64 {
+pub fn card_fits_line(card: &Card, line: &LineStatus, ctx: &EliminationContext) -> f64 {
+    let card_value = match card {
+        Card::Number(v) => *v,
+        _ => 0,
+    };
+
     if line.face_down_count == 0 {
         // Line is fully visible. Card can only help by replacing an existing card.
         // This function evaluates adding to a face-down slot, so return 0.
@@ -84,8 +90,8 @@ pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max:
         let wilds = line.wild_count;
         if wilds == 0 && new_gap == 0 { return 100.0; }
         if wilds > 0 {
-            let min_p = (wilds as i32) * neg_min;
-            let max_p = (wilds as i32) * pos_max;
+            let min_p = (wilds as i32) * ctx.neg_min;
+            let max_p = (wilds as i32) * ctx.pos_max;
             if new_gap >= min_p && new_gap <= max_p { return 100.0; }
         }
         return 0.0; // Wouldn't complete
@@ -93,8 +99,8 @@ pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max:
 
     // Partial progress: check if line stays viable
     let total_unknowns = remaining_unknowns + line.wild_count;
-    let min_p = (total_unknowns as i32) * neg_min;
-    let max_p = (total_unknowns as i32) * pos_max;
+    let min_p = (total_unknowns as i32) * ctx.neg_min;
+    let max_p = (total_unknowns as i32) * ctx.pos_max;
     if new_gap < min_p || new_gap > max_p {
         return 0.0; // Line becomes hopeless
     }
@@ -134,16 +140,15 @@ pub fn card_fits_line(card_value: i32, line: &LineStatus, neg_min: i32, pos_max:
 pub fn best_placement(
     card: &Card,
     grid: &PlayerGrid,
-    neg_min: i32,
-    pos_max: i32,
+    ctx: &EliminationContext,
 ) -> ((usize, usize), f64) {
     let card_value = match card {
         Card::Number(v) => *v,
-        Card::Wild => 0,
+        _ => 0,
     };
-    let is_wild = matches!(card, Card::Wild);
+    let is_wild = matches!(card, Card::Wild | Card::WildShaded | Card::WildUnshaded);
 
-    let lines = score_all_lines(grid, neg_min, pos_max);
+    let lines = score_all_lines(grid, ctx);
     let occupied = grid.occupied_positions();
 
     let mut best_pos = occupied.first().copied().unwrap_or((0, 0));
@@ -153,7 +158,7 @@ pub fn best_placement(
         // Don't replace a Wild with a non-Wild
         if !is_wild {
             if let Some(gc) = grid.get(r, c) {
-                if gc.face_up && matches!(gc.card, Card::Wild) {
+                if gc.face_up && matches!(gc.card, Card::Wild | Card::WildShaded | Card::WildUnshaded) {
                     continue;
                 }
             }
@@ -169,14 +174,14 @@ pub fn best_placement(
 
             if is_face_down {
                 // Placing in a face-down slot: evaluate how card fits
-                let fit = card_fits_line(card_value, line, neg_min, pos_max);
+                let fit = card_fits_line(card, line, ctx);
                 if fit >= 100.0 { completes_a_line = true; }
                 score += fit;
             } else {
                 // Replacing a face-up card: evaluate improvement
                 let old_value = grid.get(r, c).map_or(0, |gc| match &gc.card {
                     Card::Number(v) => *v,
-                    Card::Wild => 0,
+                    _ => 0,
                 });
                 // Simple heuristic: how much closer does this get the line sum to zero?
                 let old_gap_contribution = old_value;
@@ -192,7 +197,7 @@ pub fn best_placement(
         // Bonus: replacing a high-value face-up card with a low-value card
         if let Some(gc) = grid.get(r, c) {
             if gc.face_up {
-                let old_abs = match &gc.card { Card::Number(v) => v.abs(), Card::Wild => 0 };
+                let old_abs = match &gc.card { Card::Number(v) => v.abs(), _ => 0 };
                 let new_abs = card_value.abs();
                 if new_abs < old_abs {
                     score += (old_abs - new_abs) as f64 * 2.0;
@@ -227,14 +232,14 @@ pub fn best_placement(
 
 /// What specific card values would complete this line?
 /// Only meaningful when face_down_count == 1. Returns empty otherwise.
-pub fn needed_cards(line: &LineStatus, neg_min: i32, pos_max: i32) -> Vec<i32> {
+pub fn needed_cards(line: &LineStatus, ctx: &EliminationContext) -> Vec<i32> {
     if line.face_down_count != 1 { return Vec::new(); }
 
     let wilds = line.wild_count;
     if wilds == 0 {
         // Need exactly -gap
         let needed = -line.gap;
-        if needed >= neg_min && needed <= pos_max {
+        if needed >= ctx.neg_min && needed <= ctx.pos_max {
             return vec![needed];
         }
         return Vec::new();
@@ -244,11 +249,11 @@ pub fn needed_cards(line: &LineStatus, neg_min: i32, pos_max: i32) -> Vec<i32> {
     // The placed card + wilds need to sum to -current_sum
     // placed_value + wild_sum = -current_sum → placed_value = gap - wild_sum
     let mut values = Vec::new();
-    let wild_min = (wilds as i32) * neg_min;
-    let wild_max = (wilds as i32) * pos_max;
+    let wild_min = (wilds as i32) * ctx.neg_min;
+    let wild_max = (wilds as i32) * ctx.pos_max;
     for wild_sum in wild_min..=wild_max {
         let needed = line.gap - wild_sum;
-        if needed >= neg_min && needed <= pos_max && !values.contains(&needed) {
+        if needed >= ctx.neg_min && needed <= ctx.pos_max && !values.contains(&needed) {
             values.push(needed);
         }
     }
@@ -257,7 +262,7 @@ pub fn needed_cards(line: &LineStatus, neg_min: i32, pos_max: i32) -> Vec<i32> {
 
 // ── Internal helpers ──────────────────────────────────────────────────────
 
-fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], neg_min: i32, pos_max: i32) -> LineStatus {
+fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], ctx: &EliminationContext) -> LineStatus {
     let mut face_up_count = 0usize;
     let mut face_down_count = 0usize;
     let mut current_sum = 0i32;
@@ -273,7 +278,8 @@ fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], neg_min: i32, p
                         current_sum += v;
                         number_values.push(*v);
                     }
-                    Card::Wild => wild_count += 1,
+                    Card::Wild | Card::WildShaded | Card::WildUnshaded => wild_count += 1,
+                    Card::Shape(_, _) => {} // shapes don't contribute to sum
                 }
             }
             Some(_) => face_down_count += 1,
@@ -286,8 +292,8 @@ fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], neg_min: i32, p
     let gap_achievable = if total_unknowns == 0 {
         gap == 0
     } else {
-        let min_p = (total_unknowns as i32) * neg_min;
-        let max_p = (total_unknowns as i32) * pos_max;
+        let min_p = (total_unknowns as i32) * ctx.neg_min;
+        let max_p = (total_unknowns as i32) * ctx.pos_max;
         gap >= min_p && gap <= max_p
     };
 
@@ -399,6 +405,15 @@ mod tests {
     use super::*;
     use super::super::super::grid::PlayerGrid;
     use super::super::super::card::Card;
+    use super::super::super::config::GameMode;
+
+    fn numbers_ctx() -> EliminationContext {
+        EliminationContext {
+            game_mode: GameMode::Numbers,
+            neg_min: -5, pos_max: 8,
+            shade_matters: false, allow_cancellation: false,
+        }
+    }
 
     fn make_grid_all_face_up(values: &[i32]) -> PlayerGrid {
         assert_eq!(values.len(), 16);
@@ -412,7 +427,7 @@ mod tests {
     fn test_score_completable_line() {
         // Row 0: -3 + 1 + 2 + 0 = 0 → completable (all face up, sums to zero)
         let grid = make_grid_all_face_up(&[-3, 1, 2, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
-        let lines = score_all_lines(&grid, -5, 8);
+        let lines = score_all_lines(&grid, &numbers_ctx());
         let row0 = &lines[0]; // First line is row 0
         assert!(row0.1 >= 99.0, "Completable line should score ~100, got {}", row0.1);
     }
@@ -431,7 +446,7 @@ mod tests {
         grid.flip_card(0, 0); grid.flip_card(0, 1); grid.flip_card(0, 2);
         for r in 1..4 { for c in 0..4 { grid.flip_card(r, c); } }
 
-        let lines = score_all_lines(&grid, -5, 8);
+        let lines = score_all_lines(&grid, &numbers_ctx());
         let row0 = &lines[0];
         assert_eq!(row0.0.face_down_count, 1);
         assert!(row0.1 >= 70.0 && row0.1 <= 95.0, "One-away should score 70-90, got {}", row0.1);
@@ -452,8 +467,8 @@ mod tests {
             matching_value: None,
             matching_viable: false,
         };
-        assert_eq!(card_fits_line(0, &status, -5, 8), 100.0);
-        assert!(card_fits_line(5, &status, -5, 8) < 100.0);
+        assert_eq!(card_fits_line(&Card::Number(0), &status, &numbers_ctx()), 100.0);
+        assert!(card_fits_line(&Card::Number(5), &status, &numbers_ctx()) < 100.0);
     }
 
     #[test]
@@ -470,7 +485,7 @@ mod tests {
             matching_value: None,
             matching_viable: false,
         };
-        let needed = needed_cards(&status, -5, 8);
+        let needed = needed_cards(&status, &numbers_ctx());
         assert_eq!(needed, vec![3]); // need +3 to make gap 0 → actually need value = -gap = 3
     }
 
@@ -487,7 +502,7 @@ mod tests {
         grid.flip_card(0, 0); grid.flip_card(0, 1); grid.flip_card(0, 2);
         for r in 1..4 { for c in 0..4 { grid.flip_card(r, c); } }
 
-        let (pos, score) = best_placement(&Card::Number(0), &grid, -5, 8);
+        let (pos, score) = best_placement(&Card::Number(0), &grid, &numbers_ctx());
         assert_eq!(pos, (0, 3), "Should place at the face-down slot that completes row 0");
         assert!(score >= 90.0, "Completing a line should score high, got {}", score);
     }
