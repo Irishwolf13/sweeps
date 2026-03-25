@@ -207,6 +207,7 @@ function buildConfigFromUI() {
     starting_order: document.getElementById('starting-order').value,
     players: players,
     max_turns_per_round: 500,
+    round_multiplier: parseInt(document.getElementById('round-multiplier')?.value) || 1,
   };
 }
 

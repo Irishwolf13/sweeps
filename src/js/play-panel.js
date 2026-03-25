@@ -122,7 +122,7 @@ function renderScoreboard() {
   const round = playState.round + 1;
 
   sb.innerHTML = `
-    <div class="scoreboard-round">Round ${round > 4 ? 4 : round} of 4 | Turn ${playState.turn} | Draw pile: ${playState.draw_pile_count}</div>
+    <div class="scoreboard-round">Round ${round > playState.total_rounds ? playState.total_rounds : round} of ${playState.total_rounds} | Turn ${playState.turn} | Draw pile: ${playState.draw_pile_count}</div>
     <div class="scoreboard-players">
       ${playState.player_names.map((name, i) => {
         const active = i === playState.current_player ? ' active-player' : '';

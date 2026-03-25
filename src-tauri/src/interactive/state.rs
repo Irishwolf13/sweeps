@@ -45,6 +45,7 @@ pub struct PendingAction {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayableGameState {
     pub round: u8,
+    pub total_rounds: u8,
     pub turn: u32,
     pub current_player: usize,
     pub player_names: Vec<String>,
@@ -424,7 +425,7 @@ impl InteractiveGame {
 
         self.round += 1;
 
-        if self.round >= 4 {
+        if self.round >= self.config.total_rounds() {
             let winner = self.cumulative_scores
                 .iter()
                 .enumerate()
@@ -771,6 +772,7 @@ impl InteractiveGame {
 
         PlayableGameState {
             round: self.round,
+            total_rounds: self.config.total_rounds(),
             turn: self.turn,
             current_player: self.current_player,
             player_names: names,

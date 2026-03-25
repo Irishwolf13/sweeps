@@ -147,7 +147,12 @@ pub struct GameConfig {
     pub starting_order: StartingOrder,
     pub players: Vec<PlayerConfig>,
     pub max_turns_per_round: u32,
+    /// Rounds per game = player_count * round_multiplier. Default 1.
+    #[serde(default = "default_round_multiplier")]
+    pub round_multiplier: u8,
 }
+
+fn default_round_multiplier() -> u8 { 1 }
 
 impl Default for GameConfig {
     fn default() -> Self {
@@ -167,7 +172,15 @@ impl Default for GameConfig {
             starting_order: StartingOrder::default(),
             players,
             max_turns_per_round: 500,
+            round_multiplier: 1,
         }
+    }
+}
+
+impl GameConfig {
+    /// Total rounds in a game = player_count * round_multiplier
+    pub fn total_rounds(&self) -> u8 {
+        self.player_count.saturating_mul(self.round_multiplier)
     }
 }
 

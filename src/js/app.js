@@ -104,7 +104,7 @@ function displayResults(summary) {
     median: summary.median_total_score,
     min: summary.min_total_score,
     max: summary.max_total_score,
-    title: 'Score Distribution (4 rounds total)',
+    title: `Score Distribution (${summary.config.player_count * (summary.config.round_multiplier || 1)} rounds total)`,
     width: 560,
   });
 

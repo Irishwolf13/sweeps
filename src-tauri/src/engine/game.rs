@@ -64,13 +64,14 @@ struct RoundState {
 
 // ── Public API ────────────────────────────────────────────────────────────
 
-/// Play a complete 4-round game. Returns the game result.
+/// Play a complete game. Rounds = player_count * round_multiplier.
 pub fn play_game(config: &GameConfig, rng: &mut impl Rng) -> GameResult {
     let mut cumulative_scores = vec![0i32; config.player_count as usize];
     let mut round_results = Vec::new();
     let mut total_turns = 0u32;
+    let total_rounds = config.total_rounds();
 
-    for round_num in 0..4u8 {
+    for round_num in 0..total_rounds {
         let starting = determine_starting_player(config, round_num, &cumulative_scores);
         let result = play_round(config, round_num, starting, rng);
         total_turns += result.turns;

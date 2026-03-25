@@ -350,7 +350,7 @@ function distributionChart(opts) {
   }
 
   // X-axis label
-  svg += `<text x="${pad.left + plotW / 2}" y="${height - 8}" class="chart-axis-label" text-anchor="middle">Total Score (4 rounds)</text>`;
+  svg += `<text x="${pad.left + plotW / 2}" y="${height - 8}" class="chart-axis-label" text-anchor="middle">Total Score (all rounds)</text>`;
 
   // Draw each player's distribution as a smooth filled area
   for (let p = 0; p < histograms.length; p++) {
