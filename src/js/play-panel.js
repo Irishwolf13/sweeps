@@ -4,10 +4,10 @@ let playState = null;
 let selectionMode = null;  // null, 'replace', 'flip'
 
 const AI_PRESETS = {
-  beginner:     { archetype: 'Opportunist', skill: 0.3 },
-  intermediate: { archetype: 'Methodical',  skill: 0.6 },
-  advanced:     { archetype: 'Opportunist', skill: 0.85 },
-  expert:       { archetype: 'Calculator',  skill: 1.0 },
+  beginner:     { archetype: 'Methodical',   skill: 0.6 },
+  intermediate: { archetype: 'Opportunist',  skill: 0.7 },
+  advanced:     { archetype: 'Opportunist',  skill: 0.85 },
+  expert:       { archetype: 'Calculator',   skill: 1.0 },
 };
 
 function buildPlayAiPanels() {
@@ -19,9 +19,9 @@ function buildPlayAiPanels() {
       <div class="play-ai-config" style="display:flex;align-items:center;gap:0.8rem;margin:0.5rem 0;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">
         <strong style="min-width:5rem">Player ${i + 1}:</strong>
         <select id="play-arch-${i}">
-          <option value="Opportunist">Opportunist</option>
-          <option value="Methodical">Methodical</option>
-          <option value="Calculator">Calculator</option>
+          <option value="Opportunist">Opportunist (Intermediate)</option>
+          <option value="Methodical">Methodical (Beginner)</option>
+          <option value="Calculator">Calculator (Expert)</option>
         </select>
         <label style="font-size:0.8rem">Skill:</label>
         <input type="range" id="play-skill-${i}" min="0" max="100" value="85" style="width:100px"
@@ -42,7 +42,7 @@ function buildPlayAiPanels() {
 function quickFillAi(preset) {
   const count = parseInt(document.getElementById('play-player-count').value);
   const presets = {
-    beginner: { archetype: 'Opportunist', skill: 30 },
+    beginner: { archetype: 'Methodical', skill: 60 },
     expert: { archetype: 'Calculator', skill: 100 },
   };
   const mixedOrder = ['beginner', 'intermediate', 'advanced', 'expert'];

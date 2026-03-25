@@ -14,10 +14,10 @@ const ORIGINAL_QUANTITIES = {
 };
 
 const PLAYER_PRESETS = {
-  Beginner:     { archetype: 'Opportunist', skill: 30, flipStrategy: 'Random' },
-  Intermediate: { archetype: 'Methodical',  skill: 60, flipStrategy: 'Random' },
-  Advanced:     { archetype: 'Opportunist', skill: 85, flipStrategy: 'Random' },
-  Expert:       { archetype: 'Calculator',  skill: 100, flipStrategy: 'Random' },
+  Beginner:     { archetype: 'Methodical',   skill: 60, flipStrategy: 'Random' },
+  Intermediate: { archetype: 'Opportunist',  skill: 70, flipStrategy: 'Random' },
+  Advanced:     { archetype: 'Opportunist',  skill: 85, flipStrategy: 'Random' },
+  Expert:       { archetype: 'Calculator',   skill: 100, flipStrategy: 'Random' },
 };
 
 const DECK_PRESETS_BY_PLAYERS = {
@@ -107,22 +107,13 @@ function buildPlayerPanel(idx) {
   const p = PLAYER_PRESETS.Advanced;
   return `
     <div class="player-panel" id="player-panel-${idx}">
-      <h3>
-        Player ${idx + 1}
-        <select class="preset-select" onchange="applyPlayerPreset(${idx}, this.value)">
-          <option value="">Preset...</option>
-          <option value="Beginner">Beginner</option>
-          <option value="Intermediate">Intermediate</option>
-          <option value="Advanced" selected>Advanced</option>
-          <option value="Expert">Expert</option>
-        </select>
-      </h3>
+      <h3>Player ${idx + 1}</h3>
       <div class="config-group" style="margin-bottom:0.6rem">
         <label>AI Archetype</label>
         <select id="archetype-${idx}">
-          <option value="Opportunist" ${p.archetype === 'Opportunist' ? 'selected' : ''}>Opportunist</option>
-          <option value="Methodical" ${p.archetype === 'Methodical' ? 'selected' : ''}>Methodical</option>
-          <option value="Calculator" ${p.archetype === 'Calculator' ? 'selected' : ''}>Calculator</option>
+          <option value="Opportunist" ${p.archetype === 'Opportunist' ? 'selected' : ''}>Opportunist (Intermediate)</option>
+          <option value="Methodical" ${p.archetype === 'Methodical' ? 'selected' : ''}>Methodical (Beginner)</option>
+          <option value="Calculator" ${p.archetype === 'Calculator' ? 'selected' : ''}>Calculator (Expert)</option>
         </select>
       </div>
       <div class="slider-group">

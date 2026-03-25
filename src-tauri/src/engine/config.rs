@@ -123,10 +123,10 @@ impl Default for PlayerConfig {
 
 impl PlayerConfig {
     pub fn beginner() -> Self {
-        PlayerConfig { archetype: AiArchetype::Opportunist, skill: 0.3, flip_strategy: FlipStrategy::Random }
+        PlayerConfig { archetype: AiArchetype::Methodical, skill: 0.6, flip_strategy: FlipStrategy::Random }
     }
     pub fn intermediate() -> Self {
-        PlayerConfig { archetype: AiArchetype::Methodical, skill: 0.6, flip_strategy: FlipStrategy::Random }
+        PlayerConfig { archetype: AiArchetype::Opportunist, skill: 0.7, flip_strategy: FlipStrategy::Random }
     }
     pub fn advanced() -> Self {
         PlayerConfig { archetype: AiArchetype::Opportunist, skill: 0.85, flip_strategy: FlipStrategy::Random }
@@ -236,11 +236,12 @@ mod tests {
     #[test]
     fn test_player_presets() {
         let b = PlayerConfig::beginner();
-        assert_eq!(b.archetype, AiArchetype::Opportunist);
-        assert!((b.skill - 0.3).abs() < f64::EPSILON);
+        assert_eq!(b.archetype, AiArchetype::Methodical);
+        assert!((b.skill - 0.6).abs() < f64::EPSILON);
 
         let i = PlayerConfig::intermediate();
-        assert_eq!(i.archetype, AiArchetype::Methodical);
+        assert_eq!(i.archetype, AiArchetype::Opportunist);
+        assert!((i.skill - 0.7).abs() < f64::EPSILON);
 
         let a = PlayerConfig::advanced();
         assert_eq!(a.archetype, AiArchetype::Opportunist);
