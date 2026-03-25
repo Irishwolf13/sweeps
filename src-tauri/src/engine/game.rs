@@ -648,4 +648,40 @@ mod tests {
         let result = play_game(&config, &mut rng);
         assert!(result.total_turns > 0);
     }
+
+    #[test]
+    fn test_shapes_100_games_all_tiers() {
+        use crate::engine::config::{DeckConfig, GameMode};
+        let mut rng = rand::thread_rng();
+        let tiers: Vec<(&str, bool, bool, bool)> = vec![
+            ("beginner", false, false, false),
+            ("intermediate", true, false, false),
+            ("advanced", true, true, false),
+            ("expert", true, true, true),
+        ];
+        for (tier_name, shade_matters, allow_cancel, allow_diag) in &tiers {
+            let mut config = GameConfig::default();
+            config.game_mode = GameMode::Shapes;
+            config.deck = DeckConfig::shapes_scaled(4);
+            config.shade_matters = *shade_matters;
+            config.allow_cancellation = *allow_cancel;
+            config.allow_diagonal_elimination = *allow_diag;
+            config.allow_matching_elimination = true;
+            if !shade_matters {
+                if let DeckConfig::Shapes { ref mut wild_count, ref mut wild_shaded_count, ref mut wild_unshaded_count, .. } = config.deck {
+                    *wild_count = 0; *wild_shaded_count = 0; *wild_unshaded_count = 0;
+                }
+            }
+            for game_num in 0..100 {
+                let result = play_game(&config, &mut rng);
+                assert_eq!(result.player_scores.len(), 4);
+                assert!(result.total_turns > 0,
+                    "Tier {}: game {} had 0 turns", tier_name, game_num);
+                for &score in &result.player_scores {
+                    assert!(score >= 0,
+                        "Tier {}: game {} had negative score {}", tier_name, game_num, score);
+                }
+            }
+        }
+    }
 }
