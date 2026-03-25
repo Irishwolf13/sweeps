@@ -3,9 +3,26 @@ use serde::{Deserialize, Serialize};
 use super::config::DeckConfig;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Shape {
+    Circle,
+    Square,
+    Triangle,
+    Rectangle,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Shade {
+    Unshaded,
+    Shaded,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Card {
     Number(i32),
+    Shape(Shape, Shade),
     Wild,
+    WildShaded,
+    WildUnshaded,
 }
 
 impl Card {
@@ -22,7 +39,11 @@ impl std::fmt::Display for Card {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Card::Number(v) => write!(f, "{}", v),
+            Card::Shape(shape, Shade::Unshaded) => write!(f, "{:?}", shape),
+            Card::Shape(shape, Shade::Shaded) => write!(f, "Shaded {:?}", shape),
             Card::Wild => write!(f, "Wild"),
+            Card::WildShaded => write!(f, "Wild Shaded"),
+            Card::WildUnshaded => write!(f, "Wild Unshaded"),
         }
     }
 }
