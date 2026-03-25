@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::card::{build_deck, Card};
-use crate::engine::config::{AiArchetype, GameConfig, ScoringMode};
+use crate::engine::config::{AiArchetype, GameConfig, GameMode, ScoringMode};
 use crate::engine::grid::{EliminationType, PlayerGrid, SlideDirection};
 use crate::engine::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
@@ -595,7 +595,11 @@ impl InteractiveGame {
         let grid = &self.players[player_idx].grid;
         let remaining = grid.remaining_card_count();
 
-        if (remaining <= 4 && grid.all_face_up()) || remaining == 0 {
+        let triggered = match self.config.game_mode {
+            GameMode::Numbers => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+            GameMode::Shapes => remaining == 0,
+        };
+        if triggered {
             self.round_ended = true;
             self.trigger_player = Some(player_idx);
             self.players[player_idx].went_out_first = true;
@@ -669,23 +673,27 @@ impl InteractiveGame {
     }
 
     fn best_discard_idx(&self, cards: &[Card]) -> usize {
-        if cards.len() <= 1 {
-            return 0;
-        }
-        let mut best_idx = 0;
-        let mut best_score = i32::MIN;
-        for (i, card) in cards.iter().enumerate() {
-            let score = match card {
-                Card::Number(v) => v.abs(),
-                Card::Wild | Card::WildShaded | Card::WildUnshaded => -100,
-                Card::Shape(_, _) => 0,
-            };
-            if score > best_score {
-                best_score = score;
-                best_idx = i;
+        if cards.len() <= 1 { return 0; }
+        match self.config.game_mode {
+            GameMode::Numbers => {
+                let mut best_idx = 0;
+                let mut best_score = i32::MIN;
+                for (i, card) in cards.iter().enumerate() {
+                    let score = match card {
+                        Card::Number(v) => v.abs(),
+                        _ => -100,
+                    };
+                    if score > best_score { best_score = score; best_idx = i; }
+                }
+                best_idx
+            }
+            GameMode::Shapes => {
+                for (i, card) in cards.iter().enumerate() {
+                    if matches!(card, Card::Shape(_, _)) { return i; }
+                }
+                0
             }
         }
-        best_idx
     }
 
     fn score_round(&self) -> Vec<i32> {
@@ -704,7 +712,7 @@ impl InteractiveGame {
                             .sum::<i32>()
                     }
                 };
-                if p.went_out_first { score -= 2; }
+                if self.config.game_mode == GameMode::Numbers && p.went_out_first { score -= 2; }
                 score
             })
             .collect()

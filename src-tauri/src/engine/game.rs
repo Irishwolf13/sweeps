@@ -3,7 +3,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use super::card::{build_deck, Card};
-use super::config::{AiArchetype, GameConfig, ScoringMode, StartingOrder};
+use super::config::{AiArchetype, GameConfig, GameMode, ScoringMode, StartingOrder};
 use super::grid::{EliminationType, PlayerGrid};
 use super::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
@@ -267,7 +267,7 @@ fn play_turn(config: &GameConfig, state: &mut RoundState, rng: &mut impl Rng) {
     check_and_apply_eliminations(config, state, player_idx, rng);
 
     // 5. Check round end trigger
-    check_round_end_trigger(state, player_idx);
+    check_round_end_trigger(state, player_idx, &config.game_mode);
 }
 
 fn draw_card(state: &mut RoundState, source: DrawSource, rng: &mut impl Rng) -> Option<Card> {
@@ -401,7 +401,7 @@ fn check_and_apply_eliminations(
 
 // ── Round end detection ───────────────────────────────────────────────────
 
-fn check_round_end_trigger(state: &mut RoundState, player_idx: usize) {
+fn check_round_end_trigger(state: &mut RoundState, player_idx: usize, game_mode: &GameMode) {
     if state.round_ended {
         return;
     }
@@ -409,7 +409,11 @@ fn check_round_end_trigger(state: &mut RoundState, player_idx: usize) {
     let grid = &state.players[player_idx].grid;
     let remaining = grid.remaining_card_count();
 
-    if (remaining <= 4 && grid.all_face_up()) || remaining == 0 {
+    let triggered = match game_mode {
+        GameMode::Numbers => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+        GameMode::Shapes => remaining == 0,
+    };
+    if triggered {
         state.round_ended = true;
         state.trigger_player = Some(player_idx);
         state.players[player_idx].went_out_first = true;
@@ -440,8 +444,8 @@ fn score_round(config: &GameConfig, state: &RoundState) -> Vec<i32> {
                 }
             };
 
-            // Going out first: bonus of -2
-            if p.went_out_first {
+            // Going out first: bonus of -2 (Numbers mode only)
+            if config.game_mode == GameMode::Numbers && p.went_out_first {
                 score -= 2;
             }
 
@@ -604,6 +608,44 @@ mod tests {
         let mut rng = rand::thread_rng();
         let result = play_game(&config, &mut rng);
         assert_eq!(result.round_results.len(), 4);
+        assert!(result.total_turns > 0);
+    }
+
+    #[test]
+    fn test_shapes_game_runs_to_completion() {
+        use crate::engine::config::{DeckConfig, GameMode};
+        let mut config = GameConfig::default();
+        config.game_mode = GameMode::Shapes;
+        config.deck = DeckConfig::shapes_scaled(4);
+        config.allow_matching_elimination = true;
+        config.allow_cancellation = true;
+        config.shade_matters = true;
+        config.allow_diagonal_elimination = false;
+        let mut rng = rand::thread_rng();
+        let result = play_game(&config, &mut rng);
+        assert_eq!(result.player_scores.len(), 4);
+        assert!(result.total_turns > 0);
+        for round in &result.round_results {
+            for &score in &round.player_round_scores {
+                assert!(score >= 0, "Shapes scores should never be negative (no bonus)");
+            }
+        }
+    }
+
+    #[test]
+    fn test_shapes_beginner_no_wilds() {
+        use crate::engine::config::{DeckConfig, GameMode};
+        let mut config = GameConfig::default();
+        config.game_mode = GameMode::Shapes;
+        config.deck = DeckConfig::shapes_scaled(4);
+        config.shade_matters = false;
+        config.allow_cancellation = false;
+        config.allow_diagonal_elimination = false;
+        if let DeckConfig::Shapes { ref mut wild_count, ref mut wild_shaded_count, ref mut wild_unshaded_count, .. } = config.deck {
+            *wild_count = 0; *wild_shaded_count = 0; *wild_unshaded_count = 0;
+        }
+        let mut rng = rand::thread_rng();
+        let result = play_game(&config, &mut rng);
         assert!(result.total_turns > 0);
     }
 }
