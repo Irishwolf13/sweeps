@@ -50,18 +50,38 @@ impl std::fmt::Display for Card {
 
 /// Build a full deck from the given configuration.
 pub fn build_deck(config: &DeckConfig) -> Vec<Card> {
-    let mut deck = Vec::with_capacity(config.total_cards() as usize);
-
-    for &(value, count) in &config.card_quantities {
-        for _ in 0..count {
-            deck.push(Card::Number(value));
+    match config {
+        DeckConfig::Numbers { card_quantities, wild_count, .. } => {
+            let mut deck = Vec::new();
+            for &(value, count) in card_quantities {
+                for _ in 0..count {
+                    deck.push(Card::Number(value));
+                }
+            }
+            for _ in 0..*wild_count {
+                deck.push(Card::Wild);
+            }
+            deck
+        }
+        DeckConfig::Shapes { shape_quantities, wild_count, wild_shaded_count, wild_unshaded_count } => {
+            let mut deck = Vec::new();
+            for (shape, shade, count) in shape_quantities {
+                for _ in 0..*count {
+                    deck.push(Card::Shape(shape.clone(), shade.clone()));
+                }
+            }
+            for _ in 0..*wild_count {
+                deck.push(Card::Wild);
+            }
+            for _ in 0..*wild_shaded_count {
+                deck.push(Card::WildShaded);
+            }
+            for _ in 0..*wild_unshaded_count {
+                deck.push(Card::WildUnshaded);
+            }
+            deck
         }
     }
-    for _ in 0..config.wild_count {
-        deck.push(Card::Wild);
-    }
-
-    deck
 }
 
 #[cfg(test)]
@@ -100,5 +120,30 @@ mod tests {
         assert_eq!(Card::Number(5).score_value(), 5);
         assert_eq!(Card::Number(0).score_value(), 0);
         assert_eq!(Card::Wild.score_value(), 0);
+    }
+
+    #[test]
+    fn test_build_shapes_deck_original() {
+        let config = DeckConfig::shapes_original();
+        let deck = build_deck(&config);
+        assert_eq!(deck.len(), 230);
+        assert_eq!(deck.iter().filter(|c| matches!(c, Card::Shape(_, _))).count(), 200);
+        assert_eq!(deck.iter().filter(|c| matches!(c, Card::Wild)).count(), 10);
+        assert_eq!(deck.iter().filter(|c| matches!(c, Card::WildShaded)).count(), 10);
+        assert_eq!(deck.iter().filter(|c| matches!(c, Card::WildUnshaded)).count(), 10);
+    }
+
+    #[test]
+    fn test_build_shapes_deck_scaled_4p() {
+        let config = DeckConfig::shapes_scaled(4);
+        let deck = build_deck(&config);
+        assert_eq!(deck.len(), 130);
+    }
+
+    #[test]
+    fn test_shapes_deck_validation() {
+        let config = DeckConfig::shapes_scaled(4);
+        assert!(config.validate(4).is_ok());
+        assert!(config.validate(6).is_err());
     }
 }

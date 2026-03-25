@@ -1,17 +1,57 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct DeckConfig {
+use super::card::{Shape, Shade};
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum GameMode {
+    Numbers,
+    Shapes,
+}
+
+impl Default for GameMode {
+    fn default() -> Self {
+        GameMode::Numbers
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EliminationContext {
+    pub game_mode: GameMode,
     pub neg_min: i32,
     pub pos_max: i32,
-    pub card_quantities: Vec<(i32, u32)>,
-    pub wild_count: u32,
+    pub shade_matters: bool,
+    pub allow_cancellation: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
+pub enum DeckConfig {
+    Numbers {
+        neg_min: i32,
+        pos_max: i32,
+        card_quantities: Vec<(i32, u32)>,
+        wild_count: u32,
+    },
+    Shapes {
+        shape_quantities: Vec<(Shape, Shade, u32)>,
+        wild_count: u32,
+        wild_shaded_count: u32,
+        wild_unshaded_count: u32,
+    },
 }
 
 impl DeckConfig {
     pub fn total_cards(&self) -> u32 {
-        let number_cards: u32 = self.card_quantities.iter().map(|(_, count)| count).sum();
-        number_cards + self.wild_count
+        match self {
+            DeckConfig::Numbers { card_quantities, wild_count, .. } => {
+                let number_cards: u32 = card_quantities.iter().map(|(_, count)| count).sum();
+                number_cards + wild_count
+            }
+            DeckConfig::Shapes { shape_quantities, wild_count, wild_shaded_count, wild_unshaded_count } => {
+                let shape_cards: u32 = shape_quantities.iter().map(|(_, _, count)| count).sum();
+                shape_cards + wild_count + wild_shaded_count + wild_unshaded_count
+            }
+        }
     }
 
     pub fn validate(&self, player_count: u8) -> Result<(), String> {
@@ -23,25 +63,83 @@ impl DeckConfig {
                 total, player_count, needed, player_count
             ));
         }
-        if self.neg_min > 0 {
-            return Err("Negative range minimum must be <= 0".to_string());
-        }
-        if self.pos_max < 0 {
-            return Err("Positive range maximum must be >= 0".to_string());
+        match self {
+            DeckConfig::Numbers { neg_min, pos_max, .. } => {
+                if *neg_min > 0 {
+                    return Err("Negative range minimum must be <= 0".to_string());
+                }
+                if *pos_max < 0 {
+                    return Err("Positive range maximum must be >= 0".to_string());
+                }
+            }
+            DeckConfig::Shapes { .. } => {}
         }
         Ok(())
+    }
+
+    /// Temporary helper to unblock compilation in game.rs/state.rs
+    pub fn neg_min(&self) -> i32 {
+        match self {
+            DeckConfig::Numbers { neg_min, .. } => *neg_min,
+            _ => 0,
+        }
+    }
+
+    /// Temporary helper to unblock compilation in game.rs/state.rs
+    pub fn pos_max(&self) -> i32 {
+        match self {
+            DeckConfig::Numbers { pos_max, .. } => *pos_max,
+            _ => 0,
+        }
+    }
+
+    pub fn shapes_original() -> Self {
+        let mut shape_quantities = Vec::new();
+        for shape in &[Shape::Circle, Shape::Square, Shape::Triangle, Shape::Rectangle] {
+            for shade in &[Shade::Unshaded, Shade::Shaded] {
+                shape_quantities.push((shape.clone(), shade.clone(), 25u32));
+            }
+        }
+        DeckConfig::Shapes {
+            shape_quantities,
+            wild_count: 10,
+            wild_shaded_count: 10,
+            wild_unshaded_count: 10,
+        }
+    }
+
+    pub fn shapes_scaled(player_count: u8) -> Self {
+        let (per_type, w, ws, wu) = match player_count {
+            2 => (8, 4, 4, 4),
+            3 => (11, 5, 5, 5),
+            4 => (14, 6, 6, 6),
+            5 => (17, 8, 8, 8),
+            6 => (20, 9, 9, 9),
+            _ => (14, 6, 6, 6),
+        };
+        let mut shape_quantities = Vec::new();
+        for shape in &[Shape::Circle, Shape::Square, Shape::Triangle, Shape::Rectangle] {
+            for shade in &[Shade::Unshaded, Shade::Shaded] {
+                shape_quantities.push((shape.clone(), shade.clone(), per_type));
+            }
+        }
+        DeckConfig::Shapes {
+            shape_quantities,
+            wild_count: w,
+            wild_shaded_count: ws,
+            wild_unshaded_count: wu,
+        }
     }
 }
 
 impl Default for DeckConfig {
     fn default() -> Self {
-        // 4-player preset: 132 cards (120 number + 12 wild)
         let card_quantities = vec![
             (-5, 5), (-4, 6), (-3, 8), (-2, 9), (-1, 11),
             (0, 13),
             (1, 11), (2, 11), (3, 10), (4, 9), (5, 8), (6, 7), (7, 6), (8, 6),
         ];
-        DeckConfig {
+        DeckConfig::Numbers {
             neg_min: -5,
             pos_max: 8,
             card_quantities,
@@ -150,6 +248,12 @@ pub struct GameConfig {
     /// Rounds per game = player_count * round_multiplier. Default 1.
     #[serde(default = "default_round_multiplier")]
     pub round_multiplier: u8,
+    #[serde(default)]
+    pub game_mode: GameMode,
+    #[serde(default)]
+    pub shade_matters: bool,
+    #[serde(default)]
+    pub allow_cancellation: bool,
 }
 
 fn default_round_multiplier() -> u8 { 1 }
@@ -173,6 +277,9 @@ impl Default for GameConfig {
             players,
             max_turns_per_round: 500,
             round_multiplier: 1,
+            game_mode: GameMode::default(),
+            shade_matters: false,
+            allow_cancellation: false,
         }
     }
 }
@@ -181,6 +288,16 @@ impl GameConfig {
     /// Total rounds in a game = player_count * round_multiplier
     pub fn total_rounds(&self) -> u8 {
         self.player_count.saturating_mul(self.round_multiplier)
+    }
+
+    pub fn elimination_context(&self) -> EliminationContext {
+        EliminationContext {
+            game_mode: self.game_mode.clone(),
+            neg_min: self.deck.neg_min(),
+            pos_max: self.deck.pos_max(),
+            shade_matters: self.shade_matters,
+            allow_cancellation: self.allow_cancellation,
+        }
     }
 }
 
@@ -203,9 +320,12 @@ mod tests {
 
     #[test]
     fn test_deck_validation_too_few() {
-        let mut deck = DeckConfig::default();
-        deck.card_quantities = vec![(0, 1)];
-        deck.wild_count = 0;
+        let deck = DeckConfig::Numbers {
+            neg_min: -5,
+            pos_max: 8,
+            card_quantities: vec![(0, 1)],
+            wild_count: 0,
+        };
         assert!(deck.validate(4).is_err());
     }
 
