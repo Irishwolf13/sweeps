@@ -9,7 +9,7 @@ use super::card::Card;
 use super::config::{AiArchetype, PlayerConfig};
 use super::grid::{EliminationType, PlayerGrid, SlideDirection};
 
-pub use line_scoring::{LineStatus, score_all_lines, card_fits_line, best_placement, needed_cards};
+pub use line_scoring::{LineStatus, score_all_lines, card_fits_line, best_placement, best_flip_target, needed_cards};
 
 // ── Public enums (unchanged) ──────────────────────────────────────────────
 

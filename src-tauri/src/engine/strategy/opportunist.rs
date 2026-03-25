@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use super::line_scoring::{score_all_lines, card_fits_line, best_placement};
+use super::line_scoring::{score_all_lines, card_fits_line, best_placement, best_flip_target};
 use super::{DrawSource, TurnAction, should_play_smart};
 use super::super::card::Card;
 use super::super::config::PlayerConfig;
@@ -118,31 +118,6 @@ pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, rng: &mut im
         }
         TurnAction::ReplaceCard { row: worst_pos.0, col: worst_pos.1 }
     }
-}
-
-/// Pick the best face-down card to flip: prefer cards in high-scoring lines.
-fn best_flip_target(
-    face_down: &[(usize, usize)],
-    lines: &[(super::line_scoring::LineStatus, f64)],
-) -> (usize, usize) {
-    let mut best_pos = face_down[0];
-    let mut best_score = f64::NEG_INFINITY;
-
-    for &(r, c) in face_down {
-        let mut score = 0.0f64;
-        for (line, line_score) in lines {
-            if line.positions.contains(&(r, c)) {
-                // Prefer flipping in lines that are close to completion
-                score += line_score;
-            }
-        }
-        if score > best_score {
-            best_score = score;
-            best_pos = (r, c);
-        }
-    }
-
-    best_pos
 }
 
 #[cfg(test)]

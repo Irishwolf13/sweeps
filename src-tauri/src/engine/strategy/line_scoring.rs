@@ -357,6 +357,30 @@ fn score_line(status: &LineStatus) -> f64 {
     }
 }
 
+/// Pick the best face-down card to flip: prefer cards in high-scoring lines.
+pub fn best_flip_target(
+    face_down: &[(usize, usize)],
+    lines: &[(LineStatus, f64)],
+) -> (usize, usize) {
+    let mut best_pos = face_down[0];
+    let mut best_score = f64::NEG_INFINITY;
+
+    for &(r, c) in face_down {
+        let mut score = 0.0f64;
+        for (line, line_score) in lines {
+            if line.positions.contains(&(r, c)) {
+                score += line_score;
+            }
+        }
+        if score > best_score {
+            best_score = score;
+            best_pos = (r, c);
+        }
+    }
+
+    best_pos
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
