@@ -251,7 +251,7 @@ fn play_turn(config: &GameConfig, state: &mut RoundState, rng: &mut impl Rng) {
 
     // 1. Choose draw source
     let discard_top = state.discard_pile.last().cloned();
-    let source = strategy::choose_draw_source(player_config, discard_top.as_ref(), &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, &mut state.methodical_states[player_idx], rng);
+    let source = strategy::choose_draw_source(player_config, discard_top.as_ref(), &state.players[player_idx].grid, config.deck.neg_min(), config.deck.pos_max(), &mut state.methodical_states[player_idx], rng);
 
     // 2. Draw a card
     let drawn = match draw_card(state, source, rng) {
@@ -319,7 +319,7 @@ fn handle_normal_draw(
     rng: &mut impl Rng,
 ) {
     let player_config = &config.players[player_idx];
-    let action = strategy::choose_action(player_config, &drawn, &state.players[player_idx].grid, config.deck.neg_min, config.deck.pos_max, &mut state.methodical_states[player_idx], rng);
+    let action = strategy::choose_action(player_config, &drawn, &state.players[player_idx].grid, config.deck.neg_min(), config.deck.pos_max(), &mut state.methodical_states[player_idx], rng);
 
     match action {
         TurnAction::ReplaceCard { row, col } => {
@@ -343,11 +343,11 @@ fn check_and_apply_eliminations(
     rng: &mut impl Rng,
 ) {
     loop {
+        let ctx = config.elimination_context();
         let eliminations = state.players[player_idx].grid.find_eliminations(
             config.allow_matching_elimination,
             config.allow_diagonal_elimination,
-            config.deck.neg_min,
-            config.deck.pos_max,
+            &ctx,
         );
 
         if eliminations.is_empty() {
@@ -370,14 +370,14 @@ fn check_and_apply_eliminations(
             let next_grid = Some(&state.players[next_player].grid);
             let discard_idx = strategy::choose_discard_with_opponent(
                 &config.players[player_idx], &removed, next_grid,
-                config.deck.neg_min, config.deck.pos_max, rng,
+                config.deck.neg_min(), config.deck.pos_max(), rng,
             );
             state.discard_pile.push(removed[discard_idx].clone());
         }
 
         // Reshape grid after diagonal elimination
         if is_diagonal {
-            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, config.deck.neg_min, config.deck.pos_max, rng);
+            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, config.deck.neg_min(), config.deck.pos_max(), rng);
             state.players[player_idx]
                 .grid
                 .reshape_after_diagonal(&elim.kind, direction);
