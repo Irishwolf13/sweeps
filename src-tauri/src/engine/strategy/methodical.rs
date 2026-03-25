@@ -32,16 +32,40 @@ pub fn choose_draw_source(
         None => return DrawSource::DrawPile,
     };
 
-    if !should_play_smart(config.skill, rng) {
-        return if rng.gen_bool(0.5) { DrawSource::DiscardPile } else { DrawSource::DrawPile };
-    }
-
-    // Always take Wild
+    // Always take Wild — even a beginner knows this
     if matches!(card, Card::Wild) {
         return DrawSource::DiscardPile;
     }
 
     let card_value = match card { Card::Number(v) => *v, Card::Wild => 0 };
+
+    // Reject high cards before anything else. A beginner instinctively skips
+    // a 5, 6, 7, 8 on the discard pile — this is more fundamental than any
+    // strategic calculation and should not be overridden by skill randomness.
+    // Exception: the card completes or specifically helps a line.
+    let threshold = low_card_threshold(grid);
+    if card_value.abs() > threshold {
+        let lines = score_all_lines(grid, neg_min, pos_max);
+        // Still take it if it completes a line
+        for (line, _) in &lines {
+            if card_fits_line(card_value, line, neg_min, pos_max) >= 100.0 {
+                return DrawSource::DiscardPile;
+            }
+        }
+        // Still take it if it specifically helps a line
+        for (line, _) in &lines {
+            if card_fits_line(card_value, line, neg_min, pos_max) >= 40.0 {
+                return DrawSource::DiscardPile;
+            }
+        }
+        return DrawSource::DrawPile;
+    }
+
+    // From here: card is low (abs <= threshold) or a 0.
+    if !should_play_smart(config.skill, rng) {
+        return if rng.gen_bool(0.5) { DrawSource::DiscardPile } else { DrawSource::DrawPile };
+    }
+
     let lines = score_all_lines(grid, neg_min, pos_max);
 
     // Take if it completes any line
@@ -56,20 +80,8 @@ pub fn choose_draw_source(
         return DrawSource::DiscardPile;
     }
 
-    // Take if it meaningfully helps any line
-    for (line, _) in &lines {
-        if card_fits_line(card_value, line, neg_min, pos_max) >= 40.0 {
-            return DrawSource::DiscardPile;
-        }
-    }
-
-    // Low cards are worth taking even without a specific line target.
-    // Threshold shifts: early game only 0-2, late game 0-3.
-    if card_value.abs() <= low_card_threshold(grid) {
-        return DrawSource::DiscardPile;
-    }
-
-    DrawSource::DrawPile
+    // Take low card — it's safe enough
+    DrawSource::DiscardPile
 }
 
 pub fn choose_action(
