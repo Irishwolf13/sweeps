@@ -133,8 +133,8 @@ function buildPlayerPanel(idx) {
       <div class="config-group" style="margin-bottom:0.6rem">
         <label>AI Archetype</label>
         <select id="archetype-${idx}">
-          <option value="Opportunist" ${p.archetype === 'Opportunist' ? 'selected' : ''}>Opportunist (Intermediate)</option>
           <option value="Methodical" ${p.archetype === 'Methodical' ? 'selected' : ''}>Methodical (Beginner)</option>
+          <option value="Opportunist" ${p.archetype === 'Opportunist' ? 'selected' : ''}>Opportunist (Intermediate)</option>
           <option value="Calculator" ${p.archetype === 'Calculator' ? 'selected' : ''}>Calculator (Expert)</option>
         </select>
       </div>
