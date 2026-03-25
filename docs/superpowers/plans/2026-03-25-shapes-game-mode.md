@@ -488,8 +488,10 @@ pub fn find_eliminations(&self, allow_matching: bool, allow_diagonal: bool, neg_
 ```
 To:
 ```rust
-pub fn find_eliminations(&self, allow_matching: bool, allow_diagonal: bool, allow_cancellation: bool, ctx: &EliminationContext) -> Vec<Elimination>
+pub fn find_eliminations(&self, allow_matching: bool, allow_diagonal: bool, ctx: &EliminationContext) -> Vec<Elimination>
 ```
+
+Note: `allow_cancellation` is NOT added as a separate parameter — it's already available as `ctx.allow_cancellation`. Similarly, `neg_min`/`pos_max` are in `ctx`. The `allow_matching` and `allow_diagonal` booleans remain separate parameters because they come from `GameConfig` fields that are independent of the elimination context.
 
 Update all internal calls to `check_elimination` to pass `ctx`.
 
@@ -499,7 +501,6 @@ Update all internal calls to `check_elimination` to pass `ctx`.
 fn check_elimination(
     cards: &[&Card],
     allow_matching: bool,
-    allow_cancellation: bool,
     ctx: &EliminationContext,
 ) -> Option<EliminationReason> {
     if cards.is_empty() { return None; }
@@ -517,7 +518,7 @@ fn check_elimination(
             if allow_matching && check_shape_matching(cards, ctx.shade_matters) {
                 return Some(EliminationReason::AllMatching);
             }
-            if allow_cancellation && check_shape_cancellation(cards, ctx.shade_matters) {
+            if ctx.allow_cancellation && check_shape_cancellation(cards, ctx.shade_matters) {
                 return Some(EliminationReason::Cancellation);
             }
         }
@@ -762,7 +763,7 @@ All callers need the new signature. Temporarily use `config.elimination_context(
 - `interactive/state.rs: check_eliminations_human` (line ~457)
 - `interactive/state.rs: check_eliminations_ai` (line ~516)
 
-Update all to pass `config.allow_cancellation, &config.elimination_context()`.
+Update all to pass `&config.elimination_context()`.
 
 - [ ] **Step 9: Run `cargo test` — all tests pass including new shape tests**
 
@@ -840,9 +841,11 @@ Same pattern as opportunist.rs. Replace `neg_min, pos_max` with `ctx: &Eliminati
 
 - [ ] **Step 5: Update calculator.rs signatures**
 
-Same pattern. Also update `blind_draw_expected_score` to take `ctx: &EliminationContext`.
+Same pattern. Also update `blind_draw_expected_score` and `cascade_score` to take `ctx: &EliminationContext`.
 
-The calculator evaluates all possible card values in `neg_min..=pos_max` — for now this still uses `ctx.neg_min` and `ctx.pos_max`. Shapes-mode calculator logic comes in Task 5.
+**Important: calculator.rs has TWO calls to `find_eliminations`** (in `cascade_score`, lines 71 and 86) that need the new signature (`allow_cancellation, ctx`). Also update `cascade_score` to accept `allow_cancellation: bool` and pass it through.
+
+The calculator's `blind_draw_expected_score` evaluates all possible card values in `neg_min..=pos_max` — for now this still uses `ctx.neg_min` and `ctx.pos_max`. The full Shapes-mode calculator adaptation comes in Task 5.
 
 - [ ] **Step 6: Update game.rs to use elimination_context()**
 
@@ -1222,7 +1225,47 @@ if ctx.game_mode == GameMode::Numbers {
 }
 ```
 
-- [ ] **Step 9: Update fallback_action for Shapes mode**
+- [ ] **Step 9: Add Shapes-mode branch to blind_draw_expected_score in calculator.rs**
+
+The calculator's `blind_draw_expected_score` iterates `neg_min..=pos_max` which produces `0..=0` in Shapes mode (broken). Add a Shapes-mode branch that samples representative shape cards:
+
+```rust
+fn blind_draw_expected_score(grid: &PlayerGrid, ctx: &EliminationContext, skill: f64, _rng: &mut impl Rng) -> f64 {
+    match ctx.game_mode {
+        GameMode::Numbers => {
+            // Existing logic using ctx.neg_min..=ctx.pos_max...
+        }
+        GameMode::Shapes => {
+            let mut total_score = 0.0f64;
+            let mut count = 0.0f64;
+            // Sample each shape type
+            for shape in &[Shape::Circle, Shape::Square, Shape::Triangle, Shape::Rectangle] {
+                for shade in &[Shade::Unshaded, Shade::Shaded] {
+                    let card = Card::Shape(shape.clone(), shade.clone());
+                    let (_, score) = best_placement(&card, grid, ctx);
+                    total_score += score;
+                    count += 1.0;
+                }
+            }
+            // Sample wilds
+            for wild in &[Card::Wild, Card::WildShaded, Card::WildUnshaded] {
+                let (_, score) = best_placement(wild, grid, ctx);
+                total_score += score * 0.3; // wilds are rarer
+                count += 0.3;
+            }
+            if count > 0.0 { total_score / count } else { 0.0 }
+        }
+    }
+}
+```
+
+Also update `cascade_score` to pass `ctx` to `find_eliminations`:
+
+```rust
+let eliminations = sim_grid.find_eliminations(allow_matching, allow_diagonal, ctx);
+```
+
+- [ ] **Step 10: Update fallback_action for Shapes mode**
 
 In `opportunist.rs: fallback_action`, the `card_abs <= 3` heuristic is Numbers-specific. For Shapes, all cards are equal value. Update:
 
@@ -1685,9 +1728,9 @@ function applyShapesDeckPreset(playerCount, includeWilds) {
     input.value = preset.perType;
   });
 
-  document.getElementById('wild-count').value = includeWilds ? preset.wild : 0;
-  const wsEl = document.getElementById('wild-shaded-count');
-  const wuEl = document.getElementById('wild-unshaded-count');
+  document.getElementById('shapes-wild-count').value = includeWilds ? preset.wild : 0;
+  const wsEl = document.getElementById('shapes-wild-shaded-count');
+  const wuEl = document.getElementById('shapes-wild-unshaded-count');
   if (wsEl) wsEl.value = includeWilds ? preset.wildShaded : 0;
   if (wuEl) wuEl.value = includeWilds ? preset.wildUnshaded : 0;
 
@@ -1706,9 +1749,9 @@ function updateTotalCards() {
     document.querySelectorAll('.shape-qty').forEach(input => {
       total += parseInt(input.value) || 0;
     });
-    total += parseInt(document.getElementById('wild-count').value) || 0;
-    total += parseInt(document.getElementById('wild-shaded-count')?.value) || 0;
-    total += parseInt(document.getElementById('wild-unshaded-count')?.value) || 0;
+    total += parseInt(document.getElementById('shapes-wild-count')?.value) || 0;
+    total += parseInt(document.getElementById('shapes-wild-shaded-count')?.value) || 0;
+    total += parseInt(document.getElementById('shapes-wild-unshaded-count')?.value) || 0;
   } else {
     document.querySelectorAll('.card-qty').forEach(input => {
       total += parseInt(input.value) || 0;
@@ -1739,9 +1782,9 @@ function buildConfigFromUI() {
     deck = {
       type: 'Shapes',
       shape_quantities: shapeQuantities,
-      wild_count: parseInt(document.getElementById('wild-count').value) || 0,
-      wild_shaded_count: parseInt(document.getElementById('wild-shaded-count')?.value) || 0,
-      wild_unshaded_count: parseInt(document.getElementById('wild-unshaded-count')?.value) || 0,
+      wild_count: parseInt(document.getElementById('shapes-wild-count')?.value) || 0,
+      wild_shaded_count: parseInt(document.getElementById('shapes-wild-shaded-count')?.value) || 0,
+      wild_unshaded_count: parseInt(document.getElementById('shapes-wild-unshaded-count')?.value) || 0,
     };
   } else {
     const cardQuantities = [];
@@ -1812,13 +1855,15 @@ Add to the shapes config section:
 ```html
 <div class="config-group wild-counts" id="shapes-wild-counts">
   <label>Wild</label>
-  <input type="number" id="wild-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
+  <input type="number" id="shapes-wild-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
   <label>Wild Shaded</label>
-  <input type="number" id="wild-shaded-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
+  <input type="number" id="shapes-wild-shaded-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
   <label>Wild Unshaded</label>
-  <input type="number" id="wild-unshaded-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
+  <input type="number" id="shapes-wild-unshaded-count" value="6" min="0" max="50" oninput="updateTotalCards()" />
 </div>
 ```
+
+**Important:** Use `shapes-wild-count`, `shapes-wild-shaded-count`, `shapes-wild-unshaded-count` to avoid collisions with the existing Numbers `wild-count` element. Update all JS references accordingly (in `updateTotalCards`, `buildConfigFromUI`, `applyShapesDeckPreset`).
 
 - [ ] **Step 11: Test manually — launch `cargo tauri dev`, switch mode toggle**
 
