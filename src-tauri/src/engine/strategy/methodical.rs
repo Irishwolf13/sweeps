@@ -6,6 +6,15 @@ use super::super::card::Card;
 use super::super::config::PlayerConfig;
 use super::super::grid::PlayerGrid;
 
+/// Dynamic threshold for "low enough to grab without a reason."
+/// Early game (many unknowns): only 0-2 are safe grabs.
+/// Past halfway (most cards revealed): 0-3 become acceptable.
+fn low_card_threshold(grid: &PlayerGrid) -> i32 {
+    let total = grid.remaining_card_count();
+    let face_down = grid.face_down_positions().len();
+    let face_up_ratio = if total == 0 { 1.0 } else { 1.0 - (face_down as f64 / total as f64) };
+    if face_up_ratio > 0.5 { 3 } else { 2 }
+}
 
 pub fn choose_draw_source(
     config: &PlayerConfig,
@@ -54,8 +63,9 @@ pub fn choose_draw_source(
         }
     }
 
-    // Low cards (abs <= 4) are worth taking even without a specific line target
-    if card_value.abs() <= 3 {
+    // Low cards are worth taking even without a specific line target.
+    // Threshold shifts: early game only 0-2, late game 0-3.
+    if card_value.abs() <= low_card_threshold(grid) {
         return DrawSource::DiscardPile;
     }
 
@@ -107,11 +117,12 @@ pub fn choose_action(
     // Priority 2: Place if best_placement finds a good spot
     let (pos, score) = best_placement(drawn_card, grid, neg_min, pos_max);
 
-    // High cards (abs > 4): only place if score is strong (line-helping),
+    // High cards: only place if score is strong (line-helping),
     // otherwise gamble on flipping a face-down card which is likely better.
-    // Low cards (abs <= 4): place with a lower bar since they're safe.
+    // Low cards: place with a lower bar since they're safe.
+    let threshold = low_card_threshold(grid);
     let dominated_by_completion = score >= 500.0; // best_placement gives +500 for completions
-    let place_threshold = if card_value.abs() > 3 && !dominated_by_completion { 40.0 } else { 20.0 };
+    let place_threshold = if card_value.abs() > threshold && !dominated_by_completion { 40.0 } else { 20.0 };
 
     if score >= place_threshold {
         return TurnAction::ReplaceCard { row: pos.0, col: pos.1 };
