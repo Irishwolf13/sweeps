@@ -36,6 +36,10 @@ enum Card {
 - Numbers mode: Basic (card count) or Expert (sum of abs values) — unchanged.
 - Shapes mode: Always card count via `remaining_card_count()`. Every remaining card in the grid (including wilds) costs 1 point. The `score_value()` method is only used in Numbers Expert mode and is not called for Shapes scoring.
 
+### score_value() for New Variants
+
+Shape, WildShaded, and WildUnshaded variants return 0 from `score_value()`. This method is never called in Shapes mode (Shapes scoring uses `remaining_card_count()`), but the match arms must be exhaustive.
+
 ### Out of Scope
 
 Switch and Swap card types do not exist in this game and will not be implemented. Any references to them in the original rules document should be ignored.
@@ -89,7 +93,7 @@ For a line to cancel, every non-wild card must be paired: for each shape present
 2. For each shape, compute `deficit = |shaded_count - unshaded_count|`. Sum all deficits.
 3. Assign constrained wilds first: WildShaded can fill any shaded deficit, WildUnshaded can fill any unshaded deficit.
 4. Assign universal Wilds to remaining deficits (they can fill either side of any shape).
-5. After assignment, if total remaining deficit is 0, the line cancels. Any leftover wilds (beyond what's needed for pairing) are acceptable — they pair with each other.
+5. After assignment, if total remaining deficit is 0 AND the total card count (including wilds) is even, the line cancels. An odd-length line cannot fully pair and does not cancel, even if the shape deficits are resolved — every card needs a partner.
 
 This greedy approach works because wilds are fungible within their constraint class — there's no case where optimal assignment of a Wild to shape A vs shape B matters, since all that matters is the total deficit.
 
@@ -118,16 +122,16 @@ Currently `neg_min` and `pos_max` are passed as bare `i32` parameters through th
 ```rust
 struct EliminationContext {
     game_mode: GameMode,
-    // Numbers mode fields
+    // Numbers mode fields (set to 0 in Shapes mode — ignored)
     neg_min: i32,
     pos_max: i32,
-    // Shapes mode fields
+    // Shapes mode fields (set to false in Numbers mode — ignored)
     shade_matters: bool,
     allow_cancellation: bool,
 }
 ```
 
-All functions that currently take `neg_min, pos_max` take `&EliminationContext` instead. This is a single signature change per function and avoids adding more parameters as modes grow. `GameConfig` provides a method to build this context.
+All functions that currently take `neg_min, pos_max` take `&EliminationContext` instead. This is a single signature change per function and avoids adding more parameters as modes grow. `GameConfig` provides a method to build this context. In Shapes mode, `neg_min`/`pos_max` are set to 0 and never read. In Numbers mode, `shade_matters`/`allow_cancellation` are set to false and never read. Each mode's code path only accesses its own fields.
 
 ### LineStatus Adaptation
 
@@ -170,6 +174,22 @@ The archetypes (Opportunist, Methodical, Calculator) call into `line_scoring` fu
 
 The archetype code itself does not change. An Opportunist grabbing a card that scores 90 on a line doesn't care if that score comes from completing a number sum or a shape pair.
 
+### Shapes-Mode Placement Heuristics
+
+`best_placement` dispatches internally by game mode (like `analyze_line`). In Shapes mode:
+
+- Prefer positions in lines where the card's shape already appears (increases match potential).
+- For cancellation-enabled tiers: prefer positions where placing a shaded card alongside its unshaded counterpart (or vice versa) completes a pair.
+- Replacing a face-up card that doesn't contribute to any line's progress is preferred over replacing one that does.
+- Face-down positions are scored by how many lines they participate in (same heuristic as Numbers).
+
+### Shapes-Mode Discard Selection
+
+`choose_discard_from_eliminated` and `choose_discard_with_opponent` also need mode-aware logic:
+
+- In Numbers mode: discard highest absolute value, never Wild (unchanged).
+- In Shapes mode: discard whichever card is least useful — prefer discarding a shape that doesn't help the next opponent's visible lines. Never discard Wilds (they're always valuable). When opponent awareness is low (skill < 0.5), discard randomly among non-wild cards.
+
 ### Archetype Presets
 
 Beginner/Intermediate/Advanced/Expert player presets (skill levels, archetypes) remain the same across both modes. Skill level and play style are independent of card domain.
@@ -197,7 +217,12 @@ enum DeckConfig {
 }
 ```
 
-`build_deck` matches on the enum variant and builds the appropriate card types. `total_cards()` and `validate()` work on either variant. The `neg_min`/`pos_max` values are only accessible from the `Numbers` variant, which is correct since they are meaningless in Shapes mode.
+`build_deck` matches on the enum variant and builds the appropriate card types. `total_cards()` works on either variant. `validate()` dispatches by variant:
+
+- **Numbers:** existing checks (`neg_min <= 0`, `pos_max >= 0`, minimum card count).
+- **Shapes:** minimum card count for player count (same formula: `player_count * 16 + 20`), at least one shape type present, wild counts non-negative.
+
+The `neg_min`/`pos_max` values are only accessible from the `Numbers` variant, which is correct since they are meaningless in Shapes mode.
 
 **Beginner wild removal:** The Beginner tier preset constructor simply sets all three wild counts to 0. No post-processing needed.
 
@@ -232,7 +257,7 @@ After selecting a preset, users can manually adjust the quantity of each individ
 - Switching mode swaps:
   - Deck preset options (Numbers presets vs Shapes presets)
   - Card quantity editor (number values vs shape types)
-  - Tier selector for Shapes (Beginner/Intermediate/Advanced/Expert) which auto-sets elimination rule checkboxes
+  - Tier selector for Shapes (Beginner/Intermediate/Advanced/Expert) which auto-sets elimination rule checkboxes as defaults; users can manually override individual checkboxes afterward for custom configurations
   - Scoring mode dropdown hidden in Shapes (always card count)
   - Going-out-first bonus hidden in Shapes
 
