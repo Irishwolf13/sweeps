@@ -21,43 +21,93 @@
     <!-- ═══ CONFIGURE TAB ═══ -->
     <div id="tab-config" class="tab-content active">
 
+      <!-- Game Mode -->
+      <section class="config-section">
+        <h2>Game Mode</h2>
+        <div class="config-row">
+          <div class="config-group">
+            <label>Mode</label>
+            <select id="game-mode" onchange="onGameModeChange()">
+              <option value="Numbers">Numbers (Original)</option>
+              <option value="Shapes">Shapes (All Ages)</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
       <!-- Deck Composition -->
       <section class="config-section">
         <h2>Deck Composition</h2>
-        <div class="config-row">
-          <div class="config-group">
-            <label>Deck Preset</label>
-            <select id="deck-preset" onchange="applyDeckPreset(this.value)">
-              <option value="auto">Auto (scales with players)</option>
-              <option value="default">Legacy Default (109 cards)</option>
-              <option value="original">Original (220 cards)</option>
-              <option value="custom">Custom</option>
-            </select>
+        <div id="numbers-config">
+          <div class="config-row">
+            <div class="config-group">
+              <label>Deck Preset</label>
+              <select id="deck-preset" onchange="applyDeckPreset(this.value)">
+                <option value="auto">Auto (scales with players)</option>
+                <option value="default">Legacy Default (109 cards)</option>
+                <option value="original">Original (220 cards)</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="config-group">
+              <label>Negative Min</label>
+              <input type="number" id="neg-min" value="-5" min="-20" max="0" />
+            </div>
+            <div class="config-group">
+              <label>Positive Max</label>
+              <input type="number" id="pos-max" value="8" min="0" max="20" />
+            </div>
+            <div class="config-group">
+              <label>Total Cards</label>
+              <span id="total-cards" class="stat-value">250</span>
+            </div>
           </div>
-          <div class="config-group">
-            <label>Negative Min</label>
-            <input type="number" id="neg-min" value="-5" min="-20" max="0" />
+
+          <div class="config-row">
+            <div class="config-group">
+              <label>Wild Cards</label>
+              <input type="number" id="wild-count" value="8" min="0" max="30" oninput="updateTotalCards()" />
+            </div>
           </div>
-          <div class="config-group">
-            <label>Positive Max</label>
-            <input type="number" id="pos-max" value="8" min="0" max="20" />
-          </div>
-          <div class="config-group">
-            <label>Total Cards</label>
-            <span id="total-cards" class="stat-value">250</span>
+
+          <div class="quantity-table-container">
+            <h3>Card Quantities</h3>
+            <div id="card-quantity-table"></div>
           </div>
         </div>
-
-        <div class="config-row">
-          <div class="config-group">
-            <label>Wild Cards</label>
-            <input type="number" id="wild-count" value="8" min="0" max="30" oninput="updateTotalCards()" />
+        <div id="shapes-config" style="display:none">
+          <div class="config-row">
+            <div class="config-group">
+              <label>Deck Preset</label>
+              <select id="shapes-deck-preset" onchange="applyShapesDeckPresetUI()">
+                <option value="auto" selected>Auto (scales with players)</option>
+                <option value="original">Original (230 cards)</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="config-group">
+              <label>Total Cards</label>
+              <span id="shapes-total-cards" class="stat-value">130</span>
+            </div>
           </div>
-        </div>
-
-        <div class="quantity-table-container">
-          <h3>Card Quantities</h3>
-          <div id="card-quantity-table"></div>
+          <div class="config-row">
+            <div class="config-group">
+              <label>Wild</label>
+              <input type="number" id="shapes-wild-count" value="6" min="0" max="50" oninput="updateShapesTotalCards()" />
+            </div>
+            <div class="config-group">
+              <label>Wild Shaded</label>
+              <input type="number" id="shapes-wild-shaded-count" value="6" min="0" max="50" oninput="updateShapesTotalCards()" />
+            </div>
+            <div class="config-group">
+              <label>Wild Unshaded</label>
+              <input type="number" id="shapes-wild-unshaded-count" value="6" min="0" max="50" oninput="updateShapesTotalCards()" />
+            </div>
+          </div>
+          <div class="quantity-table-container">
+            <h3>Shape Quantities</h3>
+            <div id="shape-quantity-table"></div>
+          </div>
         </div>
       </section>
 
@@ -83,7 +133,7 @@
               <option value="3">3x</option>
             </select>
           </div>
-          <div class="config-group">
+          <div class="config-group" id="scoring-mode-group">
             <label>Scoring Mode</label>
             <select id="scoring-mode">
               <option value="Basic">Basic (count cards)</option>
@@ -96,6 +146,35 @@
               <option value="RoundRobin">Round Robin</option>
               <option value="WorstScoreFirst">Worst Score First</option>
             </select>
+          </div>
+        </div>
+        <div id="shapes-rules" style="display:none">
+          <div class="config-row">
+            <div class="config-group">
+              <label>Tier</label>
+              <select id="shapes-tier" onchange="applyShapesTier()">
+                <option value="Beginner">Beginner (Ages 3-5)</option>
+                <option value="Intermediate">Intermediate (Ages 4-6)</option>
+                <option value="Advanced" selected>Advanced (Ages 5-8)</option>
+                <option value="Expert">Expert (Ages 7+)</option>
+              </select>
+            </div>
+            <div class="config-group toggle-group">
+              <label>Shade Matters</label>
+              <label class="toggle">
+                <input type="checkbox" id="shade-matters" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Shaded vs unshaded are different cards</span>
+            </div>
+            <div class="config-group toggle-group">
+              <label>Cancellation</label>
+              <label class="toggle">
+                <input type="checkbox" id="allow-cancellation" checked />
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Shaded + unshaded pairs cancel</span>
+            </div>
           </div>
         </div>
         <div class="config-row">

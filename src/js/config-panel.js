@@ -1,3 +1,25 @@
+// ── Shapes constants ─────────────────────────────────────────────────────
+
+const SHAPES = ['Circle', 'Square', 'Triangle', 'Rectangle'];
+const SHADES = ['Unshaded', 'Shaded'];
+
+const SHAPES_DECK_PRESETS_BY_PLAYERS = {
+  2: { perType: 8, wild: 4, wildShaded: 4, wildUnshaded: 4 },
+  3: { perType: 11, wild: 5, wildShaded: 5, wildUnshaded: 5 },
+  4: { perType: 14, wild: 6, wildShaded: 6, wildUnshaded: 6 },
+  5: { perType: 17, wild: 8, wildShaded: 8, wildUnshaded: 8 },
+  6: { perType: 20, wild: 9, wildShaded: 9, wildUnshaded: 9 },
+};
+
+const SHAPES_ORIGINAL = { perType: 25, wild: 10, wildShaded: 10, wildUnshaded: 10 };
+
+const SHAPES_TIER_PRESETS = {
+  Beginner:     { shadematters: false, matching: true, cancellation: false, diagonal: false, wilds: false },
+  Intermediate: { shadematters: true,  matching: true, cancellation: false, diagonal: false, wilds: true },
+  Advanced:     { shadematters: true,  matching: true, cancellation: true,  diagonal: false, wilds: true },
+  Expert:       { shadematters: true,  matching: true, cancellation: true,  diagonal: true,  wilds: true },
+};
+
 // ── Default deck quantities ───────────────────────────────────────────────
 
 const DEFAULT_QUANTITIES = {
@@ -163,22 +185,39 @@ function applyToAll() {
 
 function buildConfigFromUI() {
   const playerCount = parseInt(document.getElementById('player-count').value);
+  const gameMode = document.getElementById('game-mode').value;
 
-  const cardQuantities = [];
-  document.querySelectorAll('.card-qty').forEach(input => {
-    const value = parseInt(input.dataset.value);
-    const count = parseInt(input.value) || 0;
-    if (count > 0) {
-      cardQuantities.push([value, count]);
-    }
-  });
-
-  const deck = {
-    neg_min: parseInt(document.getElementById('neg-min').value),
-    pos_max: parseInt(document.getElementById('pos-max').value),
-    card_quantities: cardQuantities,
-    wild_count: parseInt(document.getElementById('wild-count').value) || 0,
-  };
+  let deck;
+  if (gameMode === 'Shapes') {
+    const shapeQuantities = [];
+    document.querySelectorAll('.shape-qty').forEach(input => {
+      const count = parseInt(input.value) || 0;
+      if (count > 0) {
+        shapeQuantities.push([input.dataset.shape, input.dataset.shade, count]);
+      }
+    });
+    deck = {
+      type: 'Shapes',
+      shape_quantities: shapeQuantities,
+      wild_count: parseInt(document.getElementById('shapes-wild-count').value) || 0,
+      wild_shaded_count: parseInt(document.getElementById('shapes-wild-shaded-count').value) || 0,
+      wild_unshaded_count: parseInt(document.getElementById('shapes-wild-unshaded-count').value) || 0,
+    };
+  } else {
+    const cardQuantities = [];
+    document.querySelectorAll('.card-qty').forEach(input => {
+      const value = parseInt(input.dataset.value);
+      const count = parseInt(input.value) || 0;
+      if (count > 0) { cardQuantities.push([value, count]); }
+    });
+    deck = {
+      type: 'Numbers',
+      neg_min: parseInt(document.getElementById('neg-min').value),
+      pos_max: parseInt(document.getElementById('pos-max').value),
+      card_quantities: cardQuantities,
+      wild_count: parseInt(document.getElementById('wild-count').value) || 0,
+    };
+  }
 
   const players = [];
   for (let i = 0; i < playerCount; i++) {
@@ -190,11 +229,14 @@ function buildConfigFromUI() {
   }
 
   return {
+    game_mode: gameMode,
     deck: deck,
     player_count: playerCount,
     allow_matching_elimination: document.getElementById('allow-matching').checked,
     allow_diagonal_elimination: document.getElementById('allow-diagonal').checked,
-    scoring_mode: document.getElementById('scoring-mode').value,
+    allow_cancellation: document.getElementById('allow-cancellation')?.checked || false,
+    shade_matters: document.getElementById('shade-matters')?.checked || false,
+    scoring_mode: gameMode === 'Shapes' ? 'Basic' : document.getElementById('scoring-mode').value,
     starting_order: document.getElementById('starting-order').value,
     players: players,
     max_turns_per_round: 500,
@@ -215,12 +257,122 @@ function applyDeckPresetForPlayers(count) {
   updateTotalCards();
 }
 
+// ── Shapes Mode Functions ─────────────────────────────────────────────────
+
+function onGameModeChange() {
+  const mode = document.getElementById('game-mode').value;
+  const numbersConfig = document.getElementById('numbers-config');
+  const shapesConfig = document.getElementById('shapes-config');
+  const shapesRules = document.getElementById('shapes-rules');
+  const scoringGroup = document.getElementById('scoring-mode-group');
+
+  if (mode === 'Shapes') {
+    numbersConfig.style.display = 'none';
+    shapesConfig.style.display = '';
+    shapesRules.style.display = '';
+    if (scoringGroup) scoringGroup.style.display = 'none';
+    applyShapesTier();
+    buildShapeQuantityTable();
+  } else {
+    numbersConfig.style.display = '';
+    shapesConfig.style.display = 'none';
+    shapesRules.style.display = 'none';
+    if (scoringGroup) scoringGroup.style.display = '';
+  }
+}
+
+function buildShapeQuantityTable() {
+  const container = document.getElementById('shape-quantity-table');
+  let html = '<div class="quantity-table">';
+  for (const shape of SHAPES) {
+    for (const shade of SHADES) {
+      const id = `shape-qty-${shape}-${shade}`;
+      const label = shade === 'Shaded' ? `■ ${shape}` : `○ ${shape}`;
+      const cls = shade === 'Shaded' ? 'negative' : 'positive';
+      html += `
+        <div class="quantity-cell">
+          <span class="card-value ${cls}">${label}</span>
+          <input type="number" class="shape-qty" data-shape="${shape}" data-shade="${shade}"
+                 id="${id}" value="14" min="0" max="50" oninput="updateShapesTotalCards()" />
+        </div>`;
+    }
+  }
+  html += '</div>';
+  container.innerHTML = html;
+  updateShapesTotalCards();
+}
+
+function updateShapesTotalCards() {
+  let total = 0;
+  document.querySelectorAll('.shape-qty').forEach(input => {
+    total += parseInt(input.value) || 0;
+  });
+  total += parseInt(document.getElementById('shapes-wild-count').value) || 0;
+  total += parseInt(document.getElementById('shapes-wild-shaded-count').value) || 0;
+  total += parseInt(document.getElementById('shapes-wild-unshaded-count').value) || 0;
+  const el = document.getElementById('shapes-total-cards');
+  if (el) el.textContent = total.toLocaleString();
+}
+
+function applyShapesTier() {
+  const tier = document.getElementById('shapes-tier').value;
+  const preset = SHAPES_TIER_PRESETS[tier];
+  if (!preset) return;
+  document.getElementById('shade-matters').checked = preset.shadematters;
+  document.getElementById('allow-matching').checked = preset.matching;
+  document.getElementById('allow-cancellation').checked = preset.cancellation;
+  document.getElementById('allow-diagonal').checked = preset.diagonal;
+  const count = parseInt(document.getElementById('player-count').value);
+  applyShapesDeckForPlayers(count, preset.wilds);
+}
+
+function applyShapesDeckForPlayers(playerCount, includeWilds) {
+  const preset = SHAPES_DECK_PRESETS_BY_PLAYERS[playerCount];
+  if (!preset) return;
+  document.querySelectorAll('.shape-qty').forEach(input => {
+    input.value = preset.perType;
+  });
+  document.getElementById('shapes-wild-count').value = includeWilds ? preset.wild : 0;
+  document.getElementById('shapes-wild-shaded-count').value = includeWilds ? preset.wildShaded : 0;
+  document.getElementById('shapes-wild-unshaded-count').value = includeWilds ? preset.wildUnshaded : 0;
+  updateShapesTotalCards();
+}
+
+function applyShapesDeckPresetUI() {
+  const preset = document.getElementById('shapes-deck-preset').value;
+  if (preset === 'auto') {
+    const count = parseInt(document.getElementById('player-count').value);
+    const tier = document.getElementById('shapes-tier').value;
+    const tierPreset = SHAPES_TIER_PRESETS[tier];
+    applyShapesDeckForPlayers(count, tierPreset ? tierPreset.wilds : true);
+  } else if (preset === 'original') {
+    document.querySelectorAll('.shape-qty').forEach(input => {
+      input.value = SHAPES_ORIGINAL.perType;
+    });
+    document.getElementById('shapes-wild-count').value = SHAPES_ORIGINAL.wild;
+    document.getElementById('shapes-wild-shaded-count').value = SHAPES_ORIGINAL.wildShaded;
+    document.getElementById('shapes-wild-unshaded-count').value = SHAPES_ORIGINAL.wildUnshaded;
+    updateShapesTotalCards();
+  }
+  // 'custom' does nothing
+}
+
 // ── Event Listeners ───────────────────────────────────────────────────────
 
 document.getElementById('player-count').addEventListener('change', () => {
   const count = parseInt(document.getElementById('player-count').value);
-  document.getElementById('deck-preset').value = 'auto';
-  applyDeckPresetForPlayers(count);
+  const mode = document.getElementById('game-mode').value;
+  if (mode === 'Shapes') {
+    const deckPreset = document.getElementById('shapes-deck-preset').value;
+    if (deckPreset === 'auto') {
+      const tier = document.getElementById('shapes-tier').value;
+      const tierPreset = SHAPES_TIER_PRESETS[tier];
+      applyShapesDeckForPlayers(count, tierPreset ? tierPreset.wilds : true);
+    }
+  } else {
+    document.getElementById('deck-preset').value = 'auto';
+    applyDeckPresetForPlayers(count);
+  }
   buildPlayerPanels();
 });
 document.getElementById('neg-min').addEventListener('change', buildCardQuantityTable);
