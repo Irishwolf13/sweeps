@@ -2,8 +2,8 @@ use rand::Rng;
 
 use super::line_scoring::{score_all_lines, card_fits_line, best_placement};
 use super::{DrawSource, TurnAction, should_play_smart};
-use super::super::card::Card;
-use super::super::config::{EliminationContext, PlayerConfig};
+use super::super::card::{Card, Shape, Shade};
+use super::super::config::{EliminationContext, GameMode, PlayerConfig};
 use super::super::grid::PlayerGrid;
 
 /// Representative card values for sampling when skill < 0.8.
@@ -19,37 +19,57 @@ fn blind_draw_expected_score(
     skill: f64,
     _rng: &mut impl Rng,
 ) -> f64 {
-    if skill >= 0.8 {
-        // Full distribution: evaluate every possible card value
-        let mut total_score = 0.0f64;
-        let mut total_weight = 0.0f64;
+    match ctx.game_mode {
+        GameMode::Numbers => {
+            if skill >= 0.8 {
+                // Full distribution: evaluate every possible card value
+                let mut total_score = 0.0f64;
+                let mut total_weight = 0.0f64;
 
-        // Number cards
-        for v in ctx.neg_min..=ctx.pos_max {
-            let card = Card::Number(v);
-            let (_, score) = best_placement(&card, grid, ctx);
-            // Weight roughly proportional to how many of this card exist
-            // (approximation — exact counts would require deck state)
-            let weight = 1.0;
-            total_score += score * weight;
-            total_weight += weight;
+                // Number cards
+                for v in ctx.neg_min..=ctx.pos_max {
+                    let card = Card::Number(v);
+                    let (_, score) = best_placement(&card, grid, ctx);
+                    let weight = 1.0;
+                    total_score += score * weight;
+                    total_weight += weight;
+                }
+
+                // Wild
+                let (_, wild_score) = best_placement(&Card::Wild, grid, ctx);
+                total_score += wild_score * 0.5;
+                total_weight += 0.5;
+
+                if total_weight > 0.0 { total_score / total_weight } else { 0.0 }
+            } else {
+                // Sample 10 representative cards
+                let mut total = 0.0f64;
+                for &v in &SAMPLE_VALUES {
+                    let card = Card::Number(v);
+                    let (_, score) = best_placement(&card, grid, ctx);
+                    total += score;
+                }
+                total / SAMPLE_VALUES.len() as f64
+            }
         }
-
-        // Wild
-        let (_, wild_score) = best_placement(&Card::Wild, grid, ctx);
-        total_score += wild_score * 0.5; // Wilds are rarer
-        total_weight += 0.5;
-
-        if total_weight > 0.0 { total_score / total_weight } else { 0.0 }
-    } else {
-        // Sample 10 representative cards
-        let mut total = 0.0f64;
-        for &v in &SAMPLE_VALUES {
-            let card = Card::Number(v);
-            let (_, score) = best_placement(&card, grid, ctx);
-            total += score;
+        GameMode::Shapes => {
+            let mut total_score = 0.0f64;
+            let mut count = 0.0f64;
+            for shape in &[Shape::Circle, Shape::Square, Shape::Triangle, Shape::Rectangle] {
+                for shade in &[Shade::Unshaded, Shade::Shaded] {
+                    let card = Card::Shape(shape.clone(), shade.clone());
+                    let (_, score) = best_placement(&card, grid, ctx);
+                    total_score += score;
+                    count += 1.0;
+                }
+            }
+            for wild in &[Card::Wild, Card::WildShaded, Card::WildUnshaded] {
+                let (_, score) = best_placement(wild, grid, ctx);
+                total_score += score * 0.3;
+                count += 0.3;
+            }
+            if count > 0.0 { total_score / count } else { 0.0 }
         }
-        total / SAMPLE_VALUES.len() as f64
     }
 }
 
@@ -132,7 +152,7 @@ pub fn choose_action(
     let face_down = grid.face_down_positions();
 
     if !should_play_smart(config.skill, rng) {
-        return super::opportunist::fallback_action(drawn_card, grid, rng);
+        return super::opportunist::fallback_action(drawn_card, grid, ctx, rng);
     }
 
     // Evaluate all possible placements

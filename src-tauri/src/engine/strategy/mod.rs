@@ -6,7 +6,7 @@ mod opportunist;
 use rand::Rng;
 
 use super::card::Card;
-use super::config::{AiArchetype, EliminationContext, PlayerConfig};
+use super::config::{AiArchetype, EliminationContext, GameMode, PlayerConfig};
 use super::grid::{EliminationType, PlayerGrid, SlideDirection};
 
 pub use line_scoring::{LineStatus, score_all_lines, card_fits_line, best_placement, best_flip_target, needed_cards};
@@ -108,27 +108,38 @@ pub fn choose_action(
 pub fn choose_discard_from_eliminated(
     config: &PlayerConfig,
     eliminated_cards: &[Card],
+    ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> usize {
     if eliminated_cards.len() <= 1 { return 0; }
     if !should_play_smart(config.skill, rng) {
         return rng.gen_range(0..eliminated_cards.len());
     }
-    // Discard highest absolute value, never Wild
-    let mut best_idx = 0;
-    let mut best_score = i32::MIN;
-    for (i, card) in eliminated_cards.iter().enumerate() {
-        let score = match card {
-            Card::Number(v) => v.abs(),
-            Card::Wild | Card::WildShaded | Card::WildUnshaded => -100,
-            Card::Shape(_, _) => 0,
-        };
-        if score > best_score {
-            best_score = score;
-            best_idx = i;
+    match ctx.game_mode {
+        GameMode::Numbers => {
+            // Discard highest absolute value, never Wild
+            let mut best_idx = 0;
+            let mut best_score = i32::MIN;
+            for (i, card) in eliminated_cards.iter().enumerate() {
+                let score = match card {
+                    Card::Number(v) => v.abs(),
+                    _ => -100,
+                };
+                if score > best_score {
+                    best_score = score;
+                    best_idx = i;
+                }
+            }
+            best_idx
+        }
+        GameMode::Shapes => {
+            // Prefer discarding a plain shape card (not wild)
+            for (i, card) in eliminated_cards.iter().enumerate() {
+                if matches!(card, Card::Shape(_, _)) { return i; }
+            }
+            0
         }
     }
-    best_idx
 }
 
 pub fn choose_discard_with_opponent(
@@ -138,7 +149,7 @@ pub fn choose_discard_with_opponent(
     ctx: &EliminationContext,
     rng: &mut impl Rng,
 ) -> usize {
-    let base_idx = choose_discard_from_eliminated(config, eliminated_cards, rng);
+    let base_idx = choose_discard_from_eliminated(config, eliminated_cards, ctx, rng);
 
     // Opponent awareness kicks in at skill >= 0.5
     if config.skill < 0.5 || !should_play_smart(config.skill, rng) {

@@ -96,7 +96,7 @@ pub fn choose_action(
     let face_down = grid.face_down_positions();
 
     if !should_play_smart(config.skill, rng) {
-        return super::opportunist::fallback_action(drawn_card, grid, rng);
+        return super::opportunist::fallback_action(drawn_card, grid, ctx, rng);
     }
 
     let card_value = match drawn_card { Card::Number(v) => *v, _ => 0 };

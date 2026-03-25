@@ -1,5 +1,5 @@
-use super::super::card::Card;
-use super::super::config::EliminationContext;
+use super::super::card::{Card, Shape, Shade};
+use super::super::config::{EliminationContext, GameMode};
 use super::super::grid::PlayerGrid;
 
 // ── LineStatus ────────────────────────────────────────────────────────────
@@ -16,6 +16,10 @@ pub struct LineStatus {
     pub cards_needed: usize,
     pub matching_value: Option<i32>,
     pub matching_viable: bool,
+    pub matching_shape: Option<Shape>,
+    pub matching_shade: Option<Shade>,
+    pub shade_deficit: i32,
+    pub cancellation_viable: bool,
 }
 
 // ── Core scoring functions ────────────────────────────────────────────────
@@ -70,6 +74,60 @@ pub fn score_all_lines(grid: &PlayerGrid, ctx: &EliminationContext) -> Vec<(Line
 /// How well does placing a card help a specific line?
 /// Returns 0-100. 100 = completes the line.
 pub fn card_fits_line(card: &Card, line: &LineStatus, ctx: &EliminationContext) -> f64 {
+    match ctx.game_mode {
+        GameMode::Numbers => card_fits_line_numbers(card, line, ctx),
+        GameMode::Shapes => card_fits_line_shapes(card, line, ctx),
+    }
+}
+
+fn card_fits_line_shapes(card: &Card, line: &LineStatus, ctx: &EliminationContext) -> f64 {
+    if line.face_down_count == 0 { return 0.0; }
+
+    let total_slots = line.positions.len();
+    let known_after = total_slots - (line.face_down_count - 1);
+    let progress = known_after as f64 / total_slots as f64;
+
+    // Check matching path
+    if line.matching_viable {
+        let matches = match card {
+            Card::Shape(shape, shade) => {
+                let shape_ok = line.matching_shape.as_ref().map_or(true, |s| s == shape);
+                let shade_ok = if ctx.shade_matters {
+                    line.matching_shade.as_ref().map_or(true, |s| s == shade)
+                } else { true };
+                shape_ok && shade_ok
+            }
+            Card::Wild => true,
+            Card::WildShaded => !ctx.shade_matters || line.matching_shade.as_ref().map_or(true, |s| *s == Shade::Shaded),
+            Card::WildUnshaded => !ctx.shade_matters || line.matching_shade.as_ref().map_or(true, |s| *s == Shade::Unshaded),
+            Card::Number(_) => false,
+        };
+        if matches {
+            if line.face_down_count == 1 { return 100.0; }
+            return 40.0 + progress * 40.0;
+        }
+    }
+
+    // Check cancellation path
+    if line.cancellation_viable {
+        let helps_cancel = match card {
+            Card::Shape(_, shade) => {
+                (line.shade_deficit > 0 && *shade == Shade::Shaded) ||
+                (line.shade_deficit < 0 && *shade == Shade::Unshaded) ||
+                line.shade_deficit == 0
+            }
+            Card::Wild | Card::WildShaded | Card::WildUnshaded => true,
+            Card::Number(_) => false,
+        };
+        if helps_cancel {
+            return 10.0 + progress * 30.0;
+        }
+    }
+
+    0.0
+}
+
+fn card_fits_line_numbers(card: &Card, line: &LineStatus, ctx: &EliminationContext) -> f64 {
     let card_value = match card {
         Card::Number(v) => *v,
         _ => 0,
@@ -177,8 +235,14 @@ pub fn best_placement(
                 let fit = card_fits_line(card, line, ctx);
                 if fit >= 100.0 { completes_a_line = true; }
                 score += fit;
+            } else if ctx.game_mode == GameMode::Shapes {
+                // Shapes: check if new card helps any line via matching or cancellation
+                let new_fit = card_fits_line(card, line, ctx);
+                if new_fit > 0.0 {
+                    score += new_fit * 0.5;
+                }
             } else {
-                // Replacing a face-up card: evaluate improvement
+                // Replacing a face-up card: evaluate improvement (Numbers mode)
                 let old_value = grid.get(r, c).map_or(0, |gc| match &gc.card {
                     Card::Number(v) => *v,
                     _ => 0,
@@ -194,13 +258,15 @@ pub fn best_placement(
             }
         }
 
-        // Bonus: replacing a high-value face-up card with a low-value card
-        if let Some(gc) = grid.get(r, c) {
-            if gc.face_up {
-                let old_abs = match &gc.card { Card::Number(v) => v.abs(), _ => 0 };
-                let new_abs = card_value.abs();
-                if new_abs < old_abs {
-                    score += (old_abs - new_abs) as f64 * 2.0;
+        // Bonus: replacing a high-value face-up card with a low-value card (Numbers only)
+        if ctx.game_mode == GameMode::Numbers {
+            if let Some(gc) = grid.get(r, c) {
+                if gc.face_up {
+                    let old_abs = match &gc.card { Card::Number(v) => v.abs(), _ => 0 };
+                    let new_abs = card_value.abs();
+                    if new_abs < old_abs {
+                        score += (old_abs - new_abs) as f64 * 2.0;
+                    }
                 }
             }
         }
@@ -263,6 +329,13 @@ pub fn needed_cards(line: &LineStatus, ctx: &EliminationContext) -> Vec<i32> {
 // ── Internal helpers ──────────────────────────────────────────────────────
 
 fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], ctx: &EliminationContext) -> LineStatus {
+    match ctx.game_mode {
+        GameMode::Numbers => analyze_line_numbers(grid, positions, ctx),
+        GameMode::Shapes => analyze_line_shapes(grid, positions, ctx),
+    }
+}
+
+fn analyze_line_numbers(grid: &PlayerGrid, positions: &[(usize, usize)], ctx: &EliminationContext) -> LineStatus {
     let mut face_up_count = 0usize;
     let mut face_down_count = 0usize;
     let mut current_sum = 0i32;
@@ -316,6 +389,95 @@ fn analyze_line(grid: &PlayerGrid, positions: &[(usize, usize)], ctx: &Eliminati
         cards_needed: face_down_count,
         matching_value,
         matching_viable,
+        matching_shape: None,
+        matching_shade: None,
+        shade_deficit: 0,
+        cancellation_viable: false,
+    }
+}
+
+fn analyze_line_shapes(grid: &PlayerGrid, positions: &[(usize, usize)], ctx: &EliminationContext) -> LineStatus {
+    let mut face_up_count = 0usize;
+    let mut face_down_count = 0usize;
+    let mut wild_count = 0usize;
+    let mut shape_target: Option<Shape> = None;
+    let mut shade_target: Option<Shade> = None;
+    let mut matching_viable = true;
+
+    let mut shaded_counts = std::collections::HashMap::<Shape, i32>::new();
+    let mut unshaded_counts = std::collections::HashMap::<Shape, i32>::new();
+
+    for &(r, c) in positions {
+        match grid.get(r, c) {
+            Some(gc) if gc.face_up => {
+                face_up_count += 1;
+                match &gc.card {
+                    Card::Shape(shape, shade) => {
+                        if matching_viable {
+                            match &shape_target {
+                                Some(existing) if existing != shape => matching_viable = false,
+                                None => shape_target = Some(shape.clone()),
+                                _ => {}
+                            }
+                            if ctx.shade_matters && matching_viable {
+                                match &shade_target {
+                                    Some(existing) if existing != shade => matching_viable = false,
+                                    None => shade_target = Some(shade.clone()),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        match shade {
+                            Shade::Shaded => *shaded_counts.entry(shape.clone()).or_insert(0) += 1,
+                            Shade::Unshaded => *unshaded_counts.entry(shape.clone()).or_insert(0) += 1,
+                        }
+                    }
+                    Card::Wild | Card::WildShaded | Card::WildUnshaded => wild_count += 1,
+                    Card::Number(_) => matching_viable = false,
+                }
+            }
+            Some(_) => face_down_count += 1,
+            None => {}
+        }
+    }
+
+    // Compute shade deficit for cancellation
+    let all_shapes: std::collections::HashSet<Shape> =
+        shaded_counts.keys().chain(unshaded_counts.keys()).cloned().collect();
+    let mut total_shaded_deficit = 0i32;
+    let mut total_unshaded_deficit = 0i32;
+    for shape in &all_shapes {
+        let s = shaded_counts.get(shape).copied().unwrap_or(0);
+        let u = unshaded_counts.get(shape).copied().unwrap_or(0);
+        if s > u { total_unshaded_deficit += s - u; }
+        else { total_shaded_deficit += u - s; }
+    }
+    let shade_deficit = total_shaded_deficit - total_unshaded_deficit;
+    let total_deficit = total_shaded_deficit + total_unshaded_deficit;
+
+    let cancellation_viable = if !ctx.allow_cancellation {
+        false
+    } else if positions.len() % 2 != 0 && face_down_count == 0 {
+        false
+    } else {
+        total_deficit <= (wild_count + face_down_count) as i32
+    };
+
+    LineStatus {
+        positions: positions.to_vec(),
+        face_up_count,
+        face_down_count,
+        current_sum: 0,
+        wild_count,
+        gap: 0,
+        gap_achievable: false,
+        cards_needed: face_down_count,
+        matching_value: None,
+        matching_viable,
+        matching_shape: shape_target,
+        matching_shade: shade_target,
+        shade_deficit,
+        cancellation_viable,
     }
 }
 
@@ -323,51 +485,37 @@ fn score_line(status: &LineStatus) -> f64 {
     let total = status.positions.len();
     if total == 0 { return 0.0; }
 
+    let sum_path = status.gap_achievable;
+    let cancel_path = status.cancellation_viable;
+    let match_path = status.matching_viable;
+
     match status.face_down_count {
         0 => {
-            // All face-up. Completable via sum-to-zero OR via all-matching.
-            if status.gap_achievable {
-                return 100.0;
-            }
-            // Not completable via sum-to-zero; check matching path.
-            // All face-up values must already be identical (matching_viable handles this).
-            if status.matching_viable && status.matching_value.is_some() {
+            if sum_path || cancel_path { return 100.0; }
+            if match_path && (status.matching_value.is_some() || status.matching_shape.is_some()) {
                 return 100.0;
             }
             0.0
         }
         1 => {
-            // One card away. Score 70-90 based on line length (shorter = easier).
             let base = 70.0;
             let length_bonus = if total <= 2 { 20.0 } else if total <= 3 { 15.0 } else { 10.0 };
-            // Matching bonus: viable via all-matching even when sum-to-zero is hopeless.
-            let matching_bonus = if status.matching_viable { 10.0 } else { 0.0 };
-
-            if !status.gap_achievable {
-                // Sum-to-zero is hopeless; only the matching path can save this line.
-                if status.matching_viable {
-                    return base + length_bonus + matching_bonus;
-                }
+            let matching_bonus = if match_path { 10.0 } else { 0.0 };
+            if !sum_path && !cancel_path {
+                if match_path { return base + length_bonus + matching_bonus; }
                 return 0.0;
             }
             base + length_bonus + matching_bonus
         }
         2 => {
-            // Two away. Score 30-60 based on gap range achievability.
-            if !status.gap_achievable && !status.matching_viable {
-                return 0.0;
-            }
+            if !sum_path && !cancel_path && !match_path { return 0.0; }
             let base = 30.0;
             let progress = (total - 2) as f64 / total as f64;
-            // Small matching bonus for short lines where all-matching is realistic.
-            let matching_bonus = if status.matching_viable && total <= 3 { 10.0 } else { 0.0 };
+            let matching_bonus = if match_path && total <= 3 { 10.0 } else { 0.0 };
             base + progress * 30.0 + matching_bonus
         }
         _ => {
-            if !status.gap_achievable && !status.matching_viable {
-                return 0.0;
-            }
-            // Three or more away. Low but nonzero if achievable.
+            if !sum_path && !cancel_path && !match_path { return 0.0; }
             let progress = (total - status.face_down_count) as f64 / total as f64;
             5.0 + progress * 15.0
         }
@@ -466,6 +614,10 @@ mod tests {
             cards_needed: 1,
             matching_value: None,
             matching_viable: false,
+            matching_shape: None,
+            matching_shade: None,
+            shade_deficit: 0,
+            cancellation_viable: false,
         };
         assert_eq!(card_fits_line(&Card::Number(0), &status, &numbers_ctx()), 100.0);
         assert!(card_fits_line(&Card::Number(5), &status, &numbers_ctx()) < 100.0);
@@ -484,6 +636,10 @@ mod tests {
             cards_needed: 1,
             matching_value: None,
             matching_viable: false,
+            matching_shape: None,
+            matching_shade: None,
+            shade_deficit: 0,
+            cancellation_viable: false,
         };
         let needed = needed_cards(&status, &numbers_ctx());
         assert_eq!(needed, vec![3]); // need +3 to make gap 0 → actually need value = -gap = 3
@@ -521,6 +677,10 @@ mod tests {
             cards_needed: 0,
             matching_value: None,
             matching_viable: false,
+            matching_shape: None,
+            matching_shade: None,
+            shade_deficit: 0,
+            cancellation_viable: false,
         };
         assert_eq!(score_line(&status), 0.0);
     }
@@ -540,8 +700,34 @@ mod tests {
             cards_needed: 1,
             matching_value: Some(5),
             matching_viable: true,
+            matching_shape: None,
+            matching_shade: None,
+            shade_deficit: 0,
+            cancellation_viable: false,
         };
         let score = score_line(&status);
         assert!(score >= 50.0, "Matching-viable line should score well, got {}", score);
+    }
+
+    #[test]
+    fn test_shapes_matching_line_scores_high() {
+        use super::super::super::card::{Shape as S, Shade as Sh};
+        let cards: Vec<Card> = vec![
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Shaded),
+            Card::Shape(S::Circle, Sh::Shaded), Card::Shape(S::Circle, Sh::Shaded),
+            Card::Number(1), Card::Number(1), Card::Number(1), Card::Number(1),
+            Card::Number(1), Card::Number(1), Card::Number(1), Card::Number(1),
+            Card::Number(1), Card::Number(1), Card::Number(1), Card::Number(1),
+        ];
+        let mut grid = PlayerGrid::new_no_flips(cards);
+        for r in 0..4 { for c in 0..4 { grid.flip_card(r, c); } }
+
+        let ctx = EliminationContext {
+            game_mode: GameMode::Shapes,
+            neg_min: 0, pos_max: 0,
+            shade_matters: true, allow_cancellation: false,
+        };
+        let lines = score_all_lines(&grid, &ctx);
+        assert!(lines[0].1 >= 99.0, "All-matching shapes row should score ~100, got {}", lines[0].1);
     }
 }

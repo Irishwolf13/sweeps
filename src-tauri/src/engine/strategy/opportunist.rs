@@ -3,7 +3,7 @@ use rand::Rng;
 use super::line_scoring::{score_all_lines, card_fits_line, best_placement, best_flip_target};
 use super::{DrawSource, TurnAction, should_play_smart};
 use super::super::card::Card;
-use super::super::config::{EliminationContext, PlayerConfig};
+use super::super::config::{EliminationContext, GameMode, PlayerConfig};
 use super::super::grid::PlayerGrid;
 
 /// Opportunist: Line-first reactive play. No memory between turns.
@@ -46,10 +46,12 @@ pub fn choose_draw_source(
         }
     }
 
-    // Always take a 0 (universally useful for sum-to-zero)
-    let card_value = match card { Card::Number(v) => *v, _ => return DrawSource::DrawPile };
-    if card_value == 0 {
-        return DrawSource::DiscardPile;
+    // Always take a 0 (universally useful for sum-to-zero, Numbers only)
+    if ctx.game_mode == GameMode::Numbers {
+        let card_value = match card { Card::Number(v) => *v, _ => return DrawSource::DrawPile };
+        if card_value == 0 {
+            return DrawSource::DiscardPile;
+        }
     }
 
     DrawSource::DrawPile
@@ -66,7 +68,7 @@ pub fn choose_action(
 
     // Skill check: fall back to simple heuristic
     if !should_play_smart(config.skill, rng) {
-        return fallback_action(drawn_card, grid, rng);
+        return fallback_action(drawn_card, grid, ctx, rng);
     }
 
     // Compute best placement
@@ -89,9 +91,21 @@ pub fn choose_action(
 }
 
 /// Fallback when skill check fails. pub(super) so Methodical can reference it later.
-pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, rng: &mut impl Rng) -> TurnAction {
-    let card_abs = match drawn_card { Card::Number(v) => v.abs(), _ => 0 };
+pub(super) fn fallback_action(drawn_card: &Card, grid: &PlayerGrid, ctx: &EliminationContext, rng: &mut impl Rng) -> TurnAction {
     let face_down = grid.face_down_positions();
+
+    if ctx.game_mode == GameMode::Shapes {
+        if !face_down.is_empty() {
+            let idx = rng.gen_range(0..face_down.len());
+            return TurnAction::ReplaceCard { row: face_down[idx].0, col: face_down[idx].1 };
+        }
+        let occupied = grid.occupied_positions();
+        let idx = rng.gen_range(0..occupied.len());
+        return TurnAction::ReplaceCard { row: occupied[idx].0, col: occupied[idx].1 };
+    }
+
+    // Numbers mode fallback
+    let card_abs = match drawn_card { Card::Number(v) => v.abs(), _ => 0 };
 
     if card_abs <= 3 && !face_down.is_empty() {
         // Low card: replace a random face-down
