@@ -842,6 +842,23 @@ input[type="range"]::-webkit-slider-thumb {
   border-color: #7c4dff;
 }
 
+.cell-shape {
+  color: var(--text);
+  font-size: 0.7rem;
+}
+
+.cell-wild_shaded {
+  background: #1f3d2d;
+  color: #81c784;
+  border-color: #4caf50;
+}
+
+.cell-wild_unshaded {
+  background: #3d2d1f;
+  color: #ffb74d;
+  border-color: #ff9800;
+}
+
 .cell-selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -928,6 +945,9 @@ input[type="range"]::-webkit-slider-thumb {
 /* Card type colors on discard pile */
 .card-type-number { color: var(--text); }
 .card-type-wild { color: #b388ff; }
+.card-type-shape { color: var(--text); }
+.card-type-wild_shaded { color: #81c784; }
+.card-type-wild_unshaded { color: #ffb74d; }
 
 /* ── Action Panel ────────────────────────────────────────────────────── */
 
