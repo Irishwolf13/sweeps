@@ -253,6 +253,15 @@ function renderPrompt() {
     return;
   }
 
+  if (p.action_type === 'choose_elimination') {
+    prompt.textContent = 'Multiple eliminations available! Choose which line to eliminate:';
+    const choices = p.elimination_choices || [];
+    buttons.innerHTML = choices.map(c =>
+        `<button class="btn-primary" onclick="handleChooseElimination(${c.index})">${c.description}</button>`
+    ).join('');
+    return;
+  }
+
   if (p.action_type === 'choose_slide_direction') {
     prompt.textContent = 'Diagonal elimination! Choose how to slide the remaining cards:';
     buttons.innerHTML = `
@@ -320,6 +329,15 @@ async function handleCellClick(playerIdx, row, col) {
     } catch (e) {
       console.error('Action failed:', e);
     }
+  }
+}
+
+async function handleChooseElimination(index) {
+  try {
+    playState = await tauriChooseElimination(index);
+    renderPlayState();
+  } catch (e) {
+    alert('Error: ' + e);
   }
 }
 

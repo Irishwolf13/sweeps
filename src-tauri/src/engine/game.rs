@@ -356,24 +356,32 @@ fn check_and_apply_eliminations(
             break;
         }
 
-        // Merge ALL simultaneous eliminations (e.g., row + column through same Wild)
-        let mut all_positions: Vec<(usize, usize)> = Vec::new();
-        let mut has_diagonal = false;
-        let mut diagonal_kind = None;
-        for elim in &eliminations {
-            for pos in &elim.positions {
-                if !all_positions.contains(pos) {
-                    all_positions.push(*pos);
+        // Pick the best elimination (highest post-elimination line score)
+        let best_idx = if eliminations.len() == 1 {
+            0
+        } else {
+            let mut best = 0usize;
+            let mut best_score = f64::NEG_INFINITY;
+            for (i, elim) in eliminations.iter().enumerate() {
+                let mut score = elim.positions.len() as f64 * 100.0;
+                let mut sim_grid = state.players[player_idx].grid.clone();
+                sim_grid.eliminate(&elim.positions);
+                sim_grid.cleanup();
+                let lines = super::strategy::line_scoring::score_all_lines(&sim_grid, &ctx);
+                score += lines.iter().map(|(_, s)| s).sum::<f64>();
+                if score > best_score {
+                    best_score = score;
+                    best = i;
                 }
             }
-            if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
-                has_diagonal = true;
-                diagonal_kind = Some(elim.kind.clone());
-            }
-        }
+            best
+        };
+        let elim = &eliminations[best_idx];
 
-        let removed = state.players[player_idx].grid.eliminate(&all_positions);
-        state.players[player_idx].eliminations += eliminations.len() as u32;
+        let is_diagonal = matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal);
+
+        let removed = state.players[player_idx].grid.eliminate(&elim.positions);
+        state.players[player_idx].eliminations += 1;
 
         // Player chooses which card goes to discard (considering next player)
         if !removed.is_empty() {
@@ -387,13 +395,11 @@ fn check_and_apply_eliminations(
         }
 
         // Reshape grid after diagonal elimination
-        if has_diagonal {
-            if let Some(ref kind) = diagonal_kind {
-                let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, kind, &ctx, rng);
-                state.players[player_idx]
-                    .grid
-                    .reshape_after_diagonal(kind, direction);
-            }
+        if is_diagonal {
+            let direction = strategy::choose_slide_direction(&config.players[player_idx], &state.players[player_idx].grid, &elim.kind, &ctx, rng);
+            state.players[player_idx]
+                .grid
+                .reshape_after_diagonal(&elim.kind, direction);
         }
 
         // Clean up empty rows

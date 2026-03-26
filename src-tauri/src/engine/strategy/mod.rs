@@ -1,5 +1,5 @@
 mod calculator;
-mod line_scoring;
+pub(crate) mod line_scoring;
 mod methodical;
 mod opportunist;
 

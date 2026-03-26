@@ -34,12 +34,20 @@ pub struct CardView {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EliminationChoiceView {
+    pub index: usize,
+    pub description: String, // e.g. "Row 2 (sum-to-zero)"
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PendingAction {
     pub action_type: String, // "choose_draw_source", "handle_normal_card",
                               // "choose_slide_direction", "not_your_turn",
-                              // "game_over", "round_over", "choose_initial_flips"
+                              // "game_over", "round_over", "choose_initial_flips",
+                              // "choose_elimination"
     pub drawn_card: Option<CardView>,
     pub flips_remaining: Option<u8>,
+    pub elimination_choices: Option<Vec<EliminationChoiceView>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -77,6 +85,7 @@ enum InternalPending {
     ChooseDrawSource,
     HandleNormalCard(Card),
     ChooseSlideDirection(EliminationType),
+    ChooseElimination(Vec<crate::engine::grid::Elimination>),
     NotYourTurn,
     RoundOver,
     GameOver,
@@ -464,48 +473,40 @@ impl InteractiveGame {
                 break;
             }
 
-            // Merge ALL simultaneous eliminations
-            let mut all_positions: Vec<(usize, usize)> = Vec::new();
-            let mut has_diagonal = false;
-            let mut diagonal_kind = None;
-            for elim in &eliminations {
-                let reason = match &elim.reason {
-                    crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
-                    crate::engine::grid::EliminationReason::AllMatching => "all-matching",
-                    crate::engine::grid::EliminationReason::Cancellation => "cancellation",
-                };
-                let kind_str = match &elim.kind {
-                    EliminationType::Row(r) => format!("Row {}", r),
-                    EliminationType::Column(c) => format!("Column {}", c),
-                    EliminationType::MainDiagonal => "Main diagonal".to_string(),
-                    EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
-                };
-                self.action_log.push(format!("Elimination! {} ({}).", kind_str, reason));
-
-                for pos in &elim.positions {
-                    if !all_positions.contains(pos) {
-                        all_positions.push(*pos);
-                    }
-                }
-                if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
-                    has_diagonal = true;
-                    diagonal_kind = Some(elim.kind.clone());
-                }
+            // If multiple eliminations, let the human choose
+            if eliminations.len() > 1 {
+                self.pending = InternalPending::ChooseElimination(eliminations);
+                return;
             }
 
-            let removed = self.players[self.human_player].grid.eliminate(&all_positions);
-            self.players[self.human_player].eliminations += eliminations.len() as u32;
+            // Single elimination — apply it directly
+            let elim = &eliminations[0];
+            let is_diagonal = matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal);
+
+            let reason = match &elim.reason {
+                crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+                crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+            };
+            let kind_str = match &elim.kind {
+                EliminationType::Row(r) => format!("Row {}", r),
+                EliminationType::Column(c) => format!("Column {}", c),
+                EliminationType::MainDiagonal => "Main diagonal".to_string(),
+                EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+            };
+            self.action_log.push(format!("Elimination! {} ({}).", kind_str, reason));
+
+            let removed = self.players[self.human_player].grid.eliminate(&elim.positions);
+            self.players[self.human_player].eliminations += 1;
 
             if !removed.is_empty() {
                 let discard_idx = self.best_discard_idx(&removed);
                 self.discard_pile.push(removed[discard_idx].clone());
             }
 
-            if has_diagonal {
-                if let Some(kind) = diagonal_kind {
-                    self.pending = InternalPending::ChooseSlideDirection(kind);
-                    return;
-                }
+            if is_diagonal {
+                self.pending = InternalPending::ChooseSlideDirection(elim.kind.clone());
+                return;
             }
 
             self.players[self.human_player].grid.cleanup();
@@ -522,6 +523,60 @@ impl InteractiveGame {
         self.advance_to_next_player();
     }
 
+    pub fn human_choose_elimination(&mut self, index: usize) -> Result<(), String> {
+        let eliminations = match &self.pending {
+            InternalPending::ChooseElimination(elims) => elims.clone(),
+            _ => return Err("Not waiting for elimination choice".to_string()),
+        };
+        if index >= eliminations.len() {
+            return Err("Invalid elimination index".to_string());
+        }
+
+        let elim = &eliminations[index];
+        let is_diagonal = matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal);
+
+        let reason = match &elim.reason {
+            crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+            crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+            crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+        };
+        let kind_str = match &elim.kind {
+            EliminationType::Row(r) => format!("Row {}", r),
+            EliminationType::Column(c) => format!("Column {}", c),
+            EliminationType::MainDiagonal => "Main diagonal".to_string(),
+            EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+        };
+        self.action_log.push(format!("Elimination! {} ({}).", kind_str, reason));
+
+        let removed = self.players[self.human_player].grid.eliminate(&elim.positions);
+        self.players[self.human_player].eliminations += 1;
+
+        if !removed.is_empty() {
+            let discard_idx = self.best_discard_idx(&removed);
+            self.discard_pile.push(removed[discard_idx].clone());
+        }
+
+        if is_diagonal {
+            self.pending = InternalPending::ChooseSlideDirection(elim.kind.clone());
+            return Ok(());
+        }
+
+        self.players[self.human_player].grid.cleanup();
+
+        if self.players[self.human_player].grid.remaining_card_count() == 0 {
+            self.players[self.human_player].cleared_all = true;
+            self.action_log.push("You cleared all your cards!".to_string());
+            self.check_round_end_trigger(self.human_player);
+            self.turn += 1;
+            self.advance_to_next_player();
+            return Ok(());
+        }
+
+        // Continue cascade — check for more eliminations
+        self.check_eliminations_human();
+        Ok(())
+    }
+
     fn check_eliminations_ai(&mut self, player_idx: usize) {
         let player_name = self.player_name(player_idx);
         let ctx = self.config.elimination_context();
@@ -536,37 +591,45 @@ impl InteractiveGame {
                 break;
             }
 
-            // Merge ALL simultaneous eliminations
-            let mut all_positions: Vec<(usize, usize)> = Vec::new();
-            let mut has_diagonal = false;
-            let mut diagonal_kind = None;
-            for elim in &eliminations {
-                let reason = match &elim.reason {
-                    crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
-                    crate::engine::grid::EliminationReason::AllMatching => "all-matching",
-                    crate::engine::grid::EliminationReason::Cancellation => "cancellation",
-                };
-                let kind_str = match &elim.kind {
-                    EliminationType::Row(r) => format!("Row {}", r),
-                    EliminationType::Column(c) => format!("Column {}", c),
-                    EliminationType::MainDiagonal => "Main diagonal".to_string(),
-                    EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
-                };
-                self.action_log.push(format!("{} got an elimination! {} ({}).", player_name, kind_str, reason));
-
-                for pos in &elim.positions {
-                    if !all_positions.contains(pos) {
-                        all_positions.push(*pos);
+            // Pick the best elimination (highest post-elimination line score)
+            let best_idx = if eliminations.len() == 1 {
+                0
+            } else {
+                let mut best = 0usize;
+                let mut best_score = f64::NEG_INFINITY;
+                for (i, elim) in eliminations.iter().enumerate() {
+                    let mut score = elim.positions.len() as f64 * 100.0;
+                    let mut sim_grid = self.players[player_idx].grid.clone();
+                    sim_grid.eliminate(&elim.positions);
+                    sim_grid.cleanup();
+                    let lines = strategy::line_scoring::score_all_lines(&sim_grid, &ctx);
+                    score += lines.iter().map(|(_, s)| s).sum::<f64>();
+                    if score > best_score {
+                        best_score = score;
+                        best = i;
                     }
                 }
-                if matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal) {
-                    has_diagonal = true;
-                    diagonal_kind = Some(elim.kind.clone());
-                }
-            }
+                best
+            };
+            let elim = &eliminations[best_idx];
 
-            let removed = self.players[player_idx].grid.eliminate(&all_positions);
-            self.players[player_idx].eliminations += eliminations.len() as u32;
+            let is_diagonal = matches!(elim.kind, EliminationType::MainDiagonal | EliminationType::AntiDiagonal);
+
+            let reason = match &elim.reason {
+                crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+                crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+            };
+            let kind_str = match &elim.kind {
+                EliminationType::Row(r) => format!("Row {}", r),
+                EliminationType::Column(c) => format!("Column {}", c),
+                EliminationType::MainDiagonal => "Main diagonal".to_string(),
+                EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+            };
+            self.action_log.push(format!("{} got an elimination! {} ({}).", player_name, kind_str, reason));
+
+            let removed = self.players[player_idx].grid.eliminate(&elim.positions);
+            self.players[player_idx].eliminations += 1;
 
             if !removed.is_empty() {
                 let player_config = self.config.players[player_idx].clone();
@@ -579,23 +642,21 @@ impl InteractiveGame {
                 self.discard_pile.push(removed[discard_idx].clone());
             }
 
-            if has_diagonal {
-                if let Some(ref kind) = diagonal_kind {
-                    let player_config = self.config.players[player_idx].clone();
-                    let direction = strategy::choose_slide_direction(
-                        &player_config,
-                        &self.players[player_idx].grid,
-                        kind,
-                        &ctx,
-                        &mut self.rng,
-                    );
-                    let dir_name = match &direction {
-                        SlideDirection::Horizontal => "horizontal",
-                        SlideDirection::Vertical => "vertical",
-                    };
-                    self.action_log.push(format!("{} chose {} slide.", player_name, dir_name));
-                    self.players[player_idx].grid.reshape_after_diagonal(kind, direction);
-                }
+            if is_diagonal {
+                let player_config = self.config.players[player_idx].clone();
+                let direction = strategy::choose_slide_direction(
+                    &player_config,
+                    &self.players[player_idx].grid,
+                    &elim.kind,
+                    &ctx,
+                    &mut self.rng,
+                );
+                let dir_name = match &direction {
+                    SlideDirection::Horizontal => "horizontal",
+                    SlideDirection::Vertical => "vertical",
+                };
+                self.action_log.push(format!("{} chose {} slide.", player_name, dir_name));
+                self.players[player_idx].grid.reshape_after_diagonal(&elim.kind, direction);
             }
 
             self.players[player_idx].grid.cleanup();
@@ -766,36 +827,68 @@ impl InteractiveGame {
                 action_type: "choose_draw_source".to_string(),
                 drawn_card: None,
                 flips_remaining: None,
+                elimination_choices: None,
             },
             InternalPending::HandleNormalCard(card) => PendingAction {
                 action_type: "handle_normal_card".to_string(),
                 drawn_card: Some(card_to_view(card)),
                 flips_remaining: None,
+                elimination_choices: None,
             },
             InternalPending::ChooseSlideDirection(_) => PendingAction {
                 action_type: "choose_slide_direction".to_string(),
                 drawn_card: None,
                 flips_remaining: None,
+                elimination_choices: None,
+            },
+            InternalPending::ChooseElimination(elims) => {
+                let choices: Vec<EliminationChoiceView> = elims.iter().enumerate().map(|(i, e)| {
+                    let reason = match &e.reason {
+                        crate::engine::grid::EliminationReason::SumToZero => "sum-to-zero",
+                        crate::engine::grid::EliminationReason::AllMatching => "all-matching",
+                        crate::engine::grid::EliminationReason::Cancellation => "cancellation",
+                    };
+                    let kind_str = match &e.kind {
+                        EliminationType::Row(r) => format!("Row {}", *r + 1),
+                        EliminationType::Column(c) => format!("Column {}", *c + 1),
+                        EliminationType::MainDiagonal => "Main diagonal".to_string(),
+                        EliminationType::AntiDiagonal => "Anti-diagonal".to_string(),
+                    };
+                    EliminationChoiceView {
+                        index: i,
+                        description: format!("{} ({})", kind_str, reason),
+                    }
+                }).collect();
+                PendingAction {
+                    action_type: "choose_elimination".to_string(),
+                    drawn_card: None,
+                    flips_remaining: None,
+                    elimination_choices: Some(choices),
+                }
             },
             InternalPending::NotYourTurn => PendingAction {
                 action_type: "not_your_turn".to_string(),
                 drawn_card: None,
                 flips_remaining: None,
+                elimination_choices: None,
             },
             InternalPending::RoundOver => PendingAction {
                 action_type: "round_over".to_string(),
                 drawn_card: None,
                 flips_remaining: None,
+                elimination_choices: None,
             },
             InternalPending::GameOver => PendingAction {
                 action_type: "game_over".to_string(),
                 drawn_card: None,
                 flips_remaining: None,
+                elimination_choices: None,
             },
             InternalPending::ChooseInitialFlips { remaining } => PendingAction {
                 action_type: "choose_initial_flips".to_string(),
                 drawn_card: None,
                 flips_remaining: Some(*remaining),
+                elimination_choices: None,
             },
         };
 

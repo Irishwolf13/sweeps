@@ -78,3 +78,7 @@ async function tauriPlayGetState() {
 async function tauriPlayFlipInitial(row, col) {
   return await invoke('play_flip_initial', { row, col });
 }
+
+async function tauriChooseElimination(index) {
+  return await invoke('play_choose_elimination', { index });
+}
