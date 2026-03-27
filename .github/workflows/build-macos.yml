@@ -36,3 +36,4 @@ jobs:
           releaseBody: "macOS release of Sweep Simulator"
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: false
