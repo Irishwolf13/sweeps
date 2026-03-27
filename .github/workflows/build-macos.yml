@@ -18,18 +18,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust targets
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - name: Build Tauri app
+      - name: Build Tauri app (universal binary)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
         with:
           tagName: ${{ inputs.version }}
           releaseName: "Sweep Simulator ${{ inputs.version }}"
@@ -37,3 +40,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: false
+          args: --target universal-apple-darwin
