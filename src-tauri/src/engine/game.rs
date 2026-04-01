@@ -3,7 +3,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use super::card::{build_deck, Card};
-use super::config::{AiArchetype, GameConfig, GameMode, ScoringMode, StartingOrder};
+use super::config::{AiArchetype, EndingStyle, GameConfig, GameMode, ScoringMode, StartingOrder};
 use super::grid::{EliminationType, PlayerGrid};
 use super::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
@@ -267,7 +267,7 @@ fn play_turn(config: &GameConfig, state: &mut RoundState, rng: &mut impl Rng) {
     check_and_apply_eliminations(config, state, player_idx, rng);
 
     // 5. Check round end trigger
-    check_round_end_trigger(state, player_idx, &config.game_mode);
+    check_round_end_trigger(state, player_idx, &config.game_mode, &config.ending_style);
 }
 
 fn draw_card(state: &mut RoundState, source: DrawSource, rng: &mut impl Rng) -> Option<Card> {
@@ -418,7 +418,7 @@ fn check_and_apply_eliminations(
 
 // ── Round end detection ───────────────────────────────────────────────────
 
-fn check_round_end_trigger(state: &mut RoundState, player_idx: usize, game_mode: &GameMode) {
+fn check_round_end_trigger(state: &mut RoundState, player_idx: usize, game_mode: &GameMode, ending_style: &EndingStyle) {
     if state.round_ended {
         return;
     }
@@ -427,7 +427,10 @@ fn check_round_end_trigger(state: &mut RoundState, player_idx: usize, game_mode:
     let remaining = grid.remaining_card_count();
 
     let triggered = match game_mode {
-        GameMode::Numbers => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+        GameMode::Numbers => match ending_style {
+            EndingStyle::Classic => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+            EndingStyle::Reveal => grid.all_face_up(),
+        },
         GameMode::Shapes => remaining == 0,
     };
     if triggered {
@@ -461,8 +464,11 @@ fn score_round(config: &GameConfig, state: &RoundState) -> Vec<i32> {
                 }
             };
 
-            // Going out first: bonus of -2 (Numbers mode only)
-            if config.game_mode == GameMode::Numbers && p.went_out_first {
+            // Going out first: bonus of -2 (Numbers Classic mode only)
+            if config.game_mode == GameMode::Numbers
+                && config.ending_style == EndingStyle::Classic
+                && p.went_out_first
+            {
                 score -= 2;
             }
 
@@ -697,6 +703,40 @@ mod tests {
                 for &score in &result.player_scores {
                     assert!(score >= 0,
                         "Tier {}: game {} had negative score {}", tier_name, game_num, score);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_reveal_ending_triggers_all_face_up() {
+        use crate::engine::config::EndingStyle;
+        let mut config = GameConfig::default();
+        config.ending_style = EndingStyle::Reveal;
+        let mut rng = rand::thread_rng();
+        let result = play_game(&config, &mut rng);
+
+        assert_eq!(result.round_results.len(), config.total_rounds() as usize);
+        assert!(result.total_turns > 0);
+    }
+
+    #[test]
+    fn test_reveal_no_going_out_bonus() {
+        use crate::engine::config::EndingStyle;
+        let mut config = GameConfig::default();
+        config.ending_style = EndingStyle::Reveal;
+        config.scoring_mode = ScoringMode::Basic;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..50 {
+            let result = play_game(&config, &mut rng);
+            for round in &result.round_results {
+                if let Some(trigger) = round.went_out_first {
+                    assert!(
+                        round.player_round_scores[trigger] >= 0,
+                        "Reveal mode should not give -2 bonus, got {}",
+                        round.player_round_scores[trigger]
+                    );
                 }
             }
         }
