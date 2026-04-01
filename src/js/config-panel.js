@@ -237,6 +237,7 @@ function buildConfigFromUI() {
     allow_cancellation: document.getElementById('allow-cancellation')?.checked || false,
     shade_matters: document.getElementById('shade-matters')?.checked || false,
     scoring_mode: gameMode === 'Shapes' ? 'Basic' : document.getElementById('scoring-mode').value,
+    ending_style: gameMode === 'Shapes' ? 'Classic' : document.getElementById('ending-style').value,
     starting_order: document.getElementById('starting-order').value,
     players: players,
     max_turns_per_round: 500,
@@ -271,6 +272,8 @@ function onGameModeChange() {
     shapesConfig.style.display = '';
     shapesRules.style.display = '';
     if (scoringGroup) scoringGroup.style.display = 'none';
+    const endingStyleGroup = document.getElementById('ending-style-group');
+    if (endingStyleGroup) endingStyleGroup.style.display = 'none';
     applyShapesTier();
     buildShapeQuantityTable();
   } else {
@@ -278,6 +281,8 @@ function onGameModeChange() {
     shapesConfig.style.display = 'none';
     shapesRules.style.display = 'none';
     if (scoringGroup) scoringGroup.style.display = '';
+    const endingStyleGroup = document.getElementById('ending-style-group');
+    if (endingStyleGroup) endingStyleGroup.style.display = '';
   }
 }
 
