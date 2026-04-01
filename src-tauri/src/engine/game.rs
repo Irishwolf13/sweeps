@@ -20,6 +20,7 @@ pub struct GameResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoundResult {
     pub round_number: u8,
+    pub starting_player: usize,
     pub turns: u32,
     pub player_round_scores: Vec<i32>,
     pub went_out_first: Option<usize>,
@@ -198,6 +199,7 @@ fn play_round(config: &GameConfig, round_number: u8, starting_player: usize, rng
 
     RoundResult {
         round_number,
+        starting_player,
         turns: state.turn_number,
         player_round_scores: scores,
         went_out_first: state.trigger_player,
