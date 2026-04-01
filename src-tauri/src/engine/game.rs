@@ -741,4 +741,25 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_reveal_with_expert_scoring() {
+        use crate::engine::config::EndingStyle;
+        let mut config = GameConfig::default();
+        config.ending_style = EndingStyle::Reveal;
+        config.scoring_mode = ScoringMode::Expert;
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..20 {
+            let result = play_game(&config, &mut rng);
+            assert_eq!(result.round_results.len(), config.total_rounds() as usize);
+            // Expert scoring sums absolute values; scores should be non-negative
+            // in Reveal mode (no -2 bonus)
+            for round in &result.round_results {
+                for &score in &round.player_round_scores {
+                    assert!(score >= 0, "Reveal+Expert score should be >= 0, got {}", score);
+                }
+            }
+        }
+    }
 }
