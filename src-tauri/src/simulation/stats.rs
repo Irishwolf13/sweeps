@@ -94,8 +94,10 @@ pub fn aggregate(
     let mut rounds_completed_naturally = 0u64;
 
     for result in results {
-        // Winner
-        win_counts[result.winner] += 1;
+        // Winners (ties count for all tied players)
+        for &w in &result.winners {
+            win_counts[w] += 1;
+        }
 
         // Per-player scores
         for (i, &score) in result.player_scores.iter().enumerate() {

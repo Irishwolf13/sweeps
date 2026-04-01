@@ -13,7 +13,7 @@ use super::strategy::{self, DrawSource, MethodicalState, TurnAction};
 pub struct GameResult {
     pub player_scores: Vec<i32>,
     pub round_results: Vec<RoundResult>,
-    pub winner: usize,
+    pub winners: Vec<usize>,
     pub total_turns: u32,
 }
 
@@ -82,17 +82,18 @@ pub fn play_game(config: &GameConfig, rng: &mut impl Rng) -> GameResult {
         round_results.push(result);
     }
 
-    let winner = cumulative_scores
+    let min_score = cumulative_scores.iter().copied().min().unwrap_or(0);
+    let winners: Vec<usize> = cumulative_scores
         .iter()
         .enumerate()
-        .min_by_key(|(_, &s)| s)
+        .filter(|(_, &s)| s == min_score)
         .map(|(i, _)| i)
-        .unwrap_or(0);
+        .collect();
 
     GameResult {
         player_scores: cumulative_scores,
         round_results,
-        winner,
+        winners,
         total_turns,
     }
 }
@@ -493,7 +494,7 @@ mod tests {
         assert_eq!(result.player_scores.len(), 4);
         assert_eq!(result.round_results.len(), 4);
         assert!(result.total_turns > 0);
-        assert!(result.winner < 4);
+        assert!(result.winners.iter().all(|&w| w < 4));
     }
 
     #[test]
@@ -589,7 +590,7 @@ mod tests {
         let result = play_game(&config, &mut rng);
 
         assert_eq!(result.player_scores.len(), 2);
-        assert!(result.winner < 2);
+        assert!(result.winners.iter().all(|&w| w < 2));
     }
 
     #[test]

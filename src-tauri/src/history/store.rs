@@ -134,7 +134,7 @@ pub fn export_run_detailed_csv(run_id: &str) -> Result<String, String> {
 
     for (game_idx, result) in results.iter().enumerate() {
         let game_num = game_idx + 1;
-        let winner = result.winner + 1; // 1-indexed
+        let winner: String = result.winners.iter().map(|w| (w + 1).to_string()).collect::<Vec<_>>().join("/");
 
         for round in &result.round_results {
             let round_num = round.round_number + 1; // 1-indexed
