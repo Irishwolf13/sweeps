@@ -161,6 +161,18 @@ impl Default for ScoringMode {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum EndingStyle {
+    Classic,
+    Reveal,
+}
+
+impl Default for EndingStyle {
+    fn default() -> Self {
+        EndingStyle::Classic
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum StartingOrder {
     RoundRobin,
     WorstScoreFirst,
@@ -242,6 +254,8 @@ pub struct GameConfig {
     pub allow_diagonal_elimination: bool,
     pub scoring_mode: ScoringMode,
     #[serde(default)]
+    pub ending_style: EndingStyle,
+    #[serde(default)]
     pub starting_order: StartingOrder,
     pub players: Vec<PlayerConfig>,
     pub max_turns_per_round: u32,
@@ -273,6 +287,7 @@ impl Default for GameConfig {
             allow_matching_elimination: true,
             allow_diagonal_elimination: true,
             scoring_mode: ScoringMode::Basic,
+            ending_style: EndingStyle::default(),
             starting_order: StartingOrder::default(),
             players,
             max_turns_per_round: 500,
