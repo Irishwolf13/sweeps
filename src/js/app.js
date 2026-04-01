@@ -181,7 +181,8 @@ function displayResults(summary) {
         ${summary.win_rates.map((r, i) => `
           <div class="stat-row"><span class="label">Player ${i+1}</span><span class="value">${r.toFixed(1)}%</span></div>
         `).join('')}
-        <div class="stat-row"><span class="label">First mover advantage</span><span class="value ${summary.first_mover_advantage > 0 ? 'positive' : 'negative'}">${summary.first_mover_advantage > 0 ? '+' : ''}${summary.first_mover_advantage.toFixed(1)}%</span></div>
+        <div class="stat-row"><span class="label">First mover triggered last round</span><span class="value">${summary.first_mover_triggered_rate.toFixed(1)}%</span></div>
+        <div class="stat-row"><span class="label">First mover lowest score</span><span class="value">${summary.first_mover_lowest_score_rate.toFixed(1)}%</span></div>
       </div>
       <div class="stat-card">
         <h3>Deck Health</h3>
@@ -192,7 +193,7 @@ function displayResults(summary) {
       </div>
       <div class="stat-card">
         <h3>Scoring</h3>
-        <div class="stat-row"><span class="label">Went out first rate</span><span class="value">${summary.went_out_first_rate.toFixed(1)}%</span></div>
+        <div class="stat-row"><span class="label">Triggered Last Round rate</span><span class="value">${summary.went_out_first_rate.toFixed(1)}%</span></div>
         <div class="stat-row"><span class="label">Cleared all rate</span><span class="value">${summary.cleared_all_rate.toFixed(1)}%</span></div>
       </div>
     </div>
@@ -215,7 +216,7 @@ function displayResults(summary) {
           <tr><td>Win Rate</td>${summary.win_rates.map(r => `<td>${r.toFixed(1)}%</td>`).join('')}</tr>
           <tr><td>Avg Eliminations</td>${summary.player_summaries.map(p => `<td>${p.avg_eliminations.toFixed(2)}</td>`).join('')}</tr>
           <tr><td>Avg Cards Remaining</td>${summary.avg_cards_remaining.map(c => `<td>${c.toFixed(1)}</td>`).join('')}</tr>
-          <tr><td>Went Out First</td>${summary.player_summaries.map(p => `<td>${p.went_out_first_count}</td>`).join('')}</tr>
+          <tr><td>Triggered Last Round</td>${summary.player_summaries.map(p => `<td>${p.went_out_first_count}</td>`).join('')}</tr>
           <tr><td>Cleared All</td>${summary.player_summaries.map(p => `<td>${p.cleared_all_count}</td>`).join('')}</tr>
         </tbody>
       </table>
