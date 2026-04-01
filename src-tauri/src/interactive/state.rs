@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 use crate::engine::card::{build_deck, Card};
-use crate::engine::config::{AiArchetype, GameConfig, GameMode, ScoringMode};
+use crate::engine::config::{AiArchetype, EndingStyle, GameConfig, GameMode, ScoringMode};
 use crate::engine::grid::{EliminationType, PlayerGrid, SlideDirection};
 use crate::engine::strategy::{self, DrawSource, MethodicalState, TurnAction};
 
@@ -681,7 +681,10 @@ impl InteractiveGame {
         let remaining = grid.remaining_card_count();
 
         let triggered = match self.config.game_mode {
-            GameMode::Numbers => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+            GameMode::Numbers => match self.config.ending_style {
+                EndingStyle::Classic => (remaining <= 4 && grid.all_face_up()) || remaining == 0,
+                EndingStyle::Reveal => grid.all_face_up(),
+            },
             GameMode::Shapes => remaining == 0,
         };
         if triggered {
@@ -797,7 +800,12 @@ impl InteractiveGame {
                             .sum::<i32>()
                     }
                 };
-                if self.config.game_mode == GameMode::Numbers && p.went_out_first { score -= 2; }
+                if self.config.game_mode == GameMode::Numbers
+                    && self.config.ending_style == EndingStyle::Classic
+                    && p.went_out_first
+                {
+                    score -= 2;
+                }
                 score
             })
             .collect()
