@@ -45,7 +45,8 @@ pub fn compare_runs(a: &SimulationSummary, b: &SimulationSummary) -> ComparisonR
     diffs.push(diff("Avg Turns/Round", a.avg_turns_per_round, b.avg_turns_per_round));
     diffs.push(diff("Avg Eliminations/Round", a.avg_eliminations_per_round, b.avg_eliminations_per_round));
     diffs.push(diff("Avg Score/Round", a.avg_score_per_round, b.avg_score_per_round));
-    diffs.push(diff("First Mover Advantage", a.first_mover_advantage, b.first_mover_advantage));
+    diffs.push(diff("First Mover Triggered %", a.first_mover_triggered_rate, b.first_mover_triggered_rate));
+    diffs.push(diff("First Mover Lowest Score %", a.first_mover_lowest_score_rate, b.first_mover_lowest_score_rate));
 
     // Deck health
     diffs.push(diff("Draw Pile Exhaustion %", a.draw_pile_exhaustion_rate, b.draw_pile_exhaustion_rate));
@@ -53,7 +54,7 @@ pub fn compare_runs(a: &SimulationSummary, b: &SimulationSummary) -> ComparisonR
     diffs.push(diff("Round Completion %", a.round_completion_rate, b.round_completion_rate));
 
     // Scoring
-    diffs.push(diff("Went Out First %", a.went_out_first_rate, b.went_out_first_rate));
+    diffs.push(diff("Triggered Last Round %", a.went_out_first_rate, b.went_out_first_rate));
     diffs.push(diff("Cleared All %", a.cleared_all_rate, b.cleared_all_rate));
 
     // Win rates per player

@@ -124,7 +124,7 @@ pub fn export_run_detailed_csv(run_id: &str) -> Result<String, String> {
     let mut header = String::from("Game,Round,Turns,Draw Pile Exhausted,Game Winner");
     for p in 1..=player_count {
         header += &format!(
-            ",P{} Round Score,P{} Eliminations,P{} Cards Remaining,P{} Went Out First,P{} Cleared All",
+            ",P{} Round Score,P{} Eliminations,P{} Cards Remaining,P{} Triggered Last Round,P{} Cleared All",
             p, p, p, p, p
         );
     }
@@ -189,8 +189,12 @@ pub fn export_run_csv(run_id: &str) -> Result<String, String> {
     );
     csv += &format!("Avg Score/Round,{:.1}\n", summary.avg_score_per_round);
     csv += &format!(
-        "First Mover Advantage,{:.1}%\n",
-        summary.first_mover_advantage
+        "First Mover Triggered Last Round,{:.1}%\n",
+        summary.first_mover_triggered_rate
+    );
+    csv += &format!(
+        "First Mover Lowest Score,{:.1}%\n",
+        summary.first_mover_lowest_score_rate
     );
     csv += &format!(
         "Draw Pile Exhaustion,{:.1}%\n",
@@ -204,7 +208,7 @@ pub fn export_run_csv(run_id: &str) -> Result<String, String> {
         "Round Completion Rate,{:.1}%\n",
         summary.round_completion_rate
     );
-    csv += &format!("Went Out First Rate,{:.1}%\n", summary.went_out_first_rate);
+    csv += &format!("Triggered Last Round Rate,{:.1}%\n", summary.went_out_first_rate);
     csv += &format!("Cleared All Rate,{:.1}%\n", summary.cleared_all_rate);
     csv += "\n";
 
