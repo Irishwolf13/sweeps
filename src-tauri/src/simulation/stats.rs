@@ -28,7 +28,8 @@ pub struct SimulationSummary {
     pub min_total_score: Vec<i32>,
     pub max_total_score: Vec<i32>,
     pub win_rates: Vec<f64>,
-    pub first_mover_advantage: f64,
+    pub first_mover_triggered_rate: f64,
+    pub first_mover_lowest_score_rate: f64,
     pub avg_turns_per_round: f64,
 
     // Elimination stats
@@ -79,6 +80,8 @@ pub fn aggregate(
     // ── Game-level accumulators ───────────────────────────────────────────
     let mut total_turns = 0u64;
     let mut total_rounds = 0u64;
+    let mut first_mover_triggered = 0u64;
+    let mut first_mover_lowest_score = 0u64;
     let mut total_score_all = 0i64;
     let mut draw_pile_exhausted_rounds = 0u64;
     let mut went_out_first_rounds = 0u64;
@@ -122,6 +125,17 @@ pub fn aggregate(
             total_deck_size_all += round.total_deck_size as u64;
             if round.round_completed_naturally {
                 rounds_completed_naturally += 1;
+            }
+
+            // First mover round-level stats
+            let starter = round.starting_player;
+            if round.went_out_first == Some(starter) {
+                first_mover_triggered += 1;
+            }
+            if let Some(min_score) = round.player_round_scores.iter().min() {
+                if round.player_round_scores[starter] == *min_score {
+                    first_mover_lowest_score += 1;
+                }
             }
 
             // Per-player round stats
@@ -198,8 +212,16 @@ pub fn aggregate(
         .map(|&w| (w as f64 / num_games_f) * 100.0)
         .collect();
 
-    let baseline_win_rate = 100.0 / player_count as f64;
-    let first_mover_advantage = win_rates.first().copied().unwrap_or(0.0) - baseline_win_rate;
+    let first_mover_triggered_rate = if total_rounds > 0 {
+        (first_mover_triggered as f64 / total_rounds_f) * 100.0
+    } else {
+        0.0
+    };
+    let first_mover_lowest_score_rate = if total_rounds > 0 {
+        (first_mover_lowest_score as f64 / total_rounds_f) * 100.0
+    } else {
+        0.0
+    };
 
     // Averages
     let avg_turns_per_round = if total_rounds > 0 {
@@ -324,7 +346,8 @@ pub fn aggregate(
         min_total_score,
         max_total_score,
         win_rates,
-        first_mover_advantage,
+        first_mover_triggered_rate,
+        first_mover_lowest_score_rate,
         avg_turns_per_round,
         avg_eliminations_per_round,
         draw_pile_exhaustion_rate,
